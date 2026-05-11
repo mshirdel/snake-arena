@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multiplayer Snake</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Connection Screen -->
+        <div id="connect-screen" class="screen active">
+            <div class="card">
+                <h1>Snake Arena</h1>
+                <form id="join-form">
+                    <div class="form-group">
+                        <label for="player-name">Your Name</label>
+                        <input type="text" id="player-name" placeholder="Enter your name" maxlength="20" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="room-id">Room ID (optional)</label>
+                        <input type="text" id="room-id" placeholder="Leave empty for random room">
+                    </div>
+                    <div class="form-group">
+                        <label>Snake Color</label>
+                        <div class="color-picker" id="color-picker">
+                            <button type="button" class="color-btn selected" data-color="#22c55e" style="background: #22c55e"></button>
+                            <button type="button" class="color-btn" data-color="#ef4444" style="background: #ef4444"></button>
+                            <button type="button" class="color-btn" data-color="#3b82f6" style="background: #3b82f6"></button>
+                            <button type="button" class="color-btn" data-color="#f59e0b" style="background: #f59e0b"></button>
+                            <button type="button" class="color-btn" data-color="#8b5cf6" style="background: #8b5cf6"></button>
+                            <button type="button" class="color-btn" data-color="#ec4899" style="background: #ec4899"></button>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Join Game</button>
+                </form>
+                <p id="connect-error" class="error"></p>
+            </div>
+        </div>
+
+        <!-- Lobby Screen -->
+        <div id="lobby-screen" class="screen">
+            <div class="card">
+                <h2>Waiting Room</h2>
+                <div class="room-info">
+                    <p>Room: <span id="current-room-id"></span></p>
+                    <p>Players: <span id="player-count">0</span>/4</p>
+                </div>
+                <div id="player-list" class="player-list"></div>
+                <div class="lobby-status">
+                    <p id="lobby-status-text">Waiting for players...</p>
+                </div>
+                <button id="leave-btn" class="btn btn-secondary">Leave Room</button>
+            </div>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="game-screen" class="screen">
+            <div class="game-header">
+                <div class="game-info">
+                    <span>Room: <span id="game-room-id"></span></span>
+                    <span>Tick: <span id="tick-counter">0</span></span>
+                </div>
+                <div id="snake-scores" class="snake-scores"></div>
+            </div>
+            <div class="canvas-container">
+                <canvas id="game-canvas"></canvas>
+            </div>
+            <div class="game-controls">
+                <div class="direction-controls">
+                    <button class="dir-btn" data-dir="up">↑</button>
+                    <div class="dir-row">
+                        <button class="dir-btn" data-dir="left">←</button>
+                        <button class="dir-btn" data-dir="down">↓</button>
+                        <button class="dir-btn" data-dir="right">→</button>
+                    </div>
+                </div>
+                <p class="controls-hint">Use arrow keys or WASD to move</p>
+            </div>
+        </div>
+
+        <!-- Game Over Screen -->
+        <div id="gameover-screen" class="screen">
+            <div class="card">
+                <h2 id="gameover-title">Game Over</h2>
+                <p id="gameover-message"></p>
+                <div id="final-scores" class="final-scores"></div>
+                <button id="play-again-btn" class="btn btn-primary">Play Again</button>
+                <button id="back-to-menu-btn" class="btn btn-secondary">Back to Menu</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="protocol.js"></script>
+    <script src="network.js"></script>
+    <script src="game.js"></script>
+    <script src="renderer.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
