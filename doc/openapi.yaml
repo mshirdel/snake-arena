@@ -1,0 +1,443 @@
+openapi: 3.0.3
+info:
+  title: Snake Multiplayer Game Server
+  description: |
+    Realtime multiplayer Snake game backend API.
+
+    ## Overview
+    - Server is authoritative — clients only send input intents
+    - All game simulation runs server-side on a fixed tick rate (10 ticks/sec default)
+    - WebSocket communication using JSON subprotocol
+
+    ## Architecture
+    - `/health` - Health check endpoint
+    - `/rooms` - Room management (list/create)
+    - `/ws` - WebSocket game connection
+  version: 1.0.0
+  contact:
+    name: Snake Game Support
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Health check
+      description: Returns server health status
+      tags:
+        - System
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+              example:
+                status: healthy
+
+  /rooms:
+    get:
+      operationId: listRooms
+      summary: List active rooms
+      description: Returns all active game rooms
+      tags:
+        - Rooms
+      responses:
+        '200':
+          description: List of active rooms
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rooms:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Room'
+                  count:
+                    type: integer
+              example:
+                rooms:
+                  - room_id: "room1"
+                    width: 40
+                    height: 30
+                count: 1
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      operationId: createRoom
+      summary: Create a new room
+      description: Creates a new game room
+      tags:
+        - Rooms
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - room_id
+              properties:
+                room_id:
+                  type: string
+                  description: Unique identifier for the room
+                  example: "room1"
+      responses:
+        '201':
+          description: Room created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  room_id:
+                    type: string
+                  width:
+                    type: integer
+                  height:
+                    type: integer
+              example:
+                room_id: "room1"
+                width: 40
+                height: 30
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /ws:
+    get:
+      operationId: webSocketConnect
+      summary: WebSocket connection
+      description: |
+        Establishes a WebSocket connection for game communication.
+
+        ## Subprotocol
+        Uses JSON subprotocol (`json`)
+
+        ## Message Flow
+        1. Connect to WebSocket
+        2. Send `join_room` message to join/create room
+        3. Receive `ack` confirmation
+        4. Receive `player_joined` broadcast to other players
+        5. Receive `game_state` messages on each tick
+        6. Send `player_input` messages for direction changes
+        7. Send `leave_room` to disconnect gracefully
+
+      tags:
+        - WebSocket
+      responses:
+        '101':
+          description: Switching Protocols - WebSocket upgrade successful
+        '400':
+          description: Bad Request - Invalid WebSocket upgrade
+
+components:
+  schemas:
+    Room:
+      type: object
+      properties:
+        room_id:
+          type: string
+          description: Room identifier
+        width:
+          type: integer
+          description: Board width
+          default: 40
+        height:
+          type: integer
+          description: Board height
+          default: 30
+
+    WebSocketMessage:
+      type: object
+      description: Base WebSocket message wrapper
+      properties:
+        type:
+          $ref: '#/components/schemas/MessageType'
+        payload:
+          type: object
+          description: Message payload (varies by type)
+      required:
+        - type
+        - payload
+
+    MessageType:
+      type: string
+      enum:
+        # Client to Server
+        - join_room
+        - player_input
+        - leave_room
+        # Server to Client
+        - game_state
+        - game_start
+        - game_end
+        - error
+        - player_joined
+        - player_left
+        - ack
+      description: Type of WebSocket message
+
+    # Client Messages
+    JoinRoomRequest:
+      type: object
+      description: Request to join a game room
+      properties:
+        room_id:
+          type: string
+          description: Room to join (creates if doesn't exist)
+          example: "room1"
+        player_id:
+          type: string
+          description: Unique player identifier
+          example: "player_abc123"
+        player_name:
+          type: string
+          description: Display name for the player
+          example: "SnakeMaster"
+        color:
+          type: string
+          description: Snake color (hex or name)
+          example: "#FF5733"
+      required:
+        - room_id
+        - player_id
+
+    PlayerInputMessage:
+      type: object
+      description: Player direction input
+      properties:
+        direction:
+          type: string
+          enum: [up, down, left, right]
+          description: Movement direction
+          example: up
+      required:
+        - direction
+
+    LeaveRoomRequest:
+      type: object
+      description: Request to leave a room
+      properties:
+        room_id:
+          type: string
+        player_id:
+          type: string
+
+    # Server Messages
+    GameStateMessage:
+      type: object
+      description: Full game state broadcast on each tick
+      properties:
+        room_id:
+          type: string
+        tick:
+          type: integer
+          format: uint64
+          description: Current game tick
+        game_over:
+          type: boolean
+        winner:
+          type: string
+          description: Winner player_id (empty if still playing or tie)
+        width:
+          type: integer
+        height:
+          type: integer
+        snakes:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/SnakeData'
+        foods:
+          type: array
+          items:
+            $ref: '#/components/schemas/FoodData'
+        timestamp:
+          type: integer
+          format: int64
+          description: Unix timestamp in milliseconds
+
+    SnakeData:
+      type: object
+      properties:
+        player_id:
+          type: string
+        head:
+          $ref: '#/components/schemas/VectorData'
+        body:
+          type: array
+          items:
+            $ref: '#/components/schemas/VectorData'
+        color:
+          type: string
+        length:
+          type: integer
+        alive:
+          type: boolean
+
+    FoodData:
+      type: object
+      properties:
+        position:
+          $ref: '#/components/schemas/VectorData'
+
+    VectorData:
+      type: object
+      properties:
+        x:
+          type: integer
+        y:
+          type: integer
+
+    GameStartMessage:
+      type: object
+      properties:
+        room_id:
+          type: string
+        tick:
+          type: integer
+          format: uint64
+        players:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlayerInfo'
+
+    GameEndMessage:
+      type: object
+      properties:
+        room_id:
+          type: string
+        winner:
+          type: string
+        survivors:
+          type: array
+          items:
+            type: string
+
+    PlayerInfo:
+      type: object
+      properties:
+        player_id:
+          type: string
+        player_name:
+          type: string
+        color:
+          type: string
+
+    ErrorMessage:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Error code
+          example: invalid_json
+        message:
+          type: string
+          description: Human-readable error message
+
+  responses:
+    BadRequest:
+      description: Bad Request
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+          example:
+            error: "invalid request"
+
+    Conflict:
+      description: Conflict - Resource already exists
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+          example:
+            error: "room already exists"
+
+    InternalError:
+      description: Internal Server Error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+          example:
+            error: "internal server error"
+
+  examples:
+    joinRoom:
+      type: json
+      value:
+        type: join_room
+        payload:
+          room_id: "room1"
+          player_id: "player_abc123"
+          player_name: "SnakeMaster"
+          color: "#FF5733"
+
+    playerInput:
+      type: json
+      value:
+        type: player_input
+        payload:
+          direction: "up"
+
+    leaveRoom:
+      type: json
+      value:
+        type: leave_room
+        payload:
+          room_id: "room1"
+          player_id: "player_abc123"
+
+    gameState:
+      type: json
+      value:
+        type: game_state
+        payload:
+          room_id: "room1"
+          tick: 150
+          game_over: false
+          winner: ""
+          width: 40
+          height: 30
+          snakes:
+            player_abc123:
+              player_id: "player_abc123"
+              head: {x: 10, y: 15}
+              body: [{x: 9, y: 15}, {x: 8, y: 15}]
+              color: "#FF5733"
+              length: 3
+              alive: true
+          foods:
+            - position: {x: 20, y: 15}
+          timestamp: 1715450000000
+
+    error:
+      type: json
+      value:
+        type: error
+        payload:
+          code: "invalid_json"
+          message: "malformed message"
