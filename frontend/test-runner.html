@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Frontend Tests</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #4ade80;
+            margin-bottom: 20px;
+        }
+        .test-suite {
+            background: #16213e;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        .test-item {
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin: 5px 0;
+            font-family: monospace;
+            display: flex;
+            align-items: center;
+        }
+        .test-item.pass {
+            background: rgba(34, 197, 94, 0.2);
+            color: #4ade80;
+        }
+        .test-item.fail {
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+        }
+        .test-item .icon {
+            margin-right: 10px;
+        }
+        .test-item .name {
+            flex: 1;
+        }
+        .test-item .error {
+            color: #f87171;
+            font-size: 0.85em;
+            margin-left: 10px;
+        }
+        .summary {
+            background: #16213e;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            margin-top: 20px;
+        }
+        .summary h2 {
+            margin-bottom: 10px;
+        }
+        .summary .passed {
+            color: #4ade80;
+        }
+        .summary .failed {
+            color: #f87171;
+        }
+        .run-btn {
+            background: #4ade80;
+            color: #1a1a2e;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+        .run-btn:hover {
+            background: #22c55e;
+        }
+        .websocket-test {
+            background: #16213e;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        .websocket-test h3 {
+            margin-bottom: 10px;
+            color: #4ade80;
+        }
+        .connection-status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .connection-status.connected {
+            background: rgba(34, 197, 94, 0.2);
+            color: #4ade80;
+        }
+        .connection-status.disconnected {
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+        }
+        .message-log {
+            max-height: 300px;
+            overflow-y: auto;
+            background: #0f0f1a;
+            border-radius: 4px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 0.85em;
+        }
+        .message {
+            margin: 5px 0;
+            padding: 5px;
+            border-radius: 4px;
+        }
+        .message.sent {
+            background: rgba(59, 130, 246, 0.2);
+            color: #60a5fa;
+        }
+        .message.received {
+            background: rgba(34, 197, 94, 0.2);
+            color: #4ade80;
+        }
+        .message.error {
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .controls button {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        .btn-connect {
+            background: #4ade80;
+            color: #1a1a2e;
+        }
+        .btn-disconnect {
+            background: #f87171;
+            color: white;
+        }
+        .btn-send {
+            background: #3b82f6;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Frontend WebSocket Tests</h1>
+
+        <button class="run-btn" onclick="runAllTests()">Run All Tests</button>
+
+        <div class="test-suite" id="test-results">
+            <p style="color: #666;">Click "Run All Tests" to start...</p>
+        </div>
+
+        <div class="summary" id="summary" style="display: none;">
+            <h2>Test Results</h2>
+            <p class="passed">Passed: <span id="passed-count">0</span></p>
+            <p class="failed">Failed: <span id="failed-count">0</span></p>
+        </div>
+
+        <div class="websocket-test">
+            <h3>🔌 Live WebSocket Tester</h3>
+            <div class="connection-status disconnected" id="connection-status">
+                Disconnected
+            </div>
+            <div class="message-log" id="message-log"></div>
+            <div class="controls">
+                <button class="btn-connect" onclick="connectWS()">Connect</button>
+                <button class="btn-disconnect" onclick="disconnectWS()">Disconnect</button>
+                <button class="btn-send" onclick="sendJoin()">Join Room</button>
+                <button class="btn-send" onclick="sendInput()">Send Input</button>
+                <button class="btn-send" onclick="sendLeave()">Leave Room</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load the frontend modules -->
+    <script src="protocol.js"></script>
+    <script src="network.js"></script>
+    <script src="game.js"></script>
+
+    <!-- Test runner -->
+    <script src="test.js"></script>
+
+    <script>
+        // Override console.log for test output
+        const originalLog = console.log;
+        let testOutput = [];
+
+        function runAllTests() {
+            const resultsDiv = document.getElementById('test-results');
+            const summaryDiv = document.getElementById('summary');
+            resultsDiv.innerHTML = '';
+            testOutput = [];
+
+            // Run tests synchronously
+            let passed = 0;
+            let failed = 0;
+
+            for (const { name, fn } of tests) {
+                try {
+                    fn();
+                    resultsDiv.innerHTML += `<div class="test-item pass"><span class="icon">✅</span><span class="name">${name}</span></div>`;
+                    passed++;
+                } catch (error) {
+                    resultsDiv.innerHTML += `<div class="test-item fail"><span class="icon">❌</span><span class="name">${name}</span><span class="error">${error.message}</span></div>`;
+                    failed++;
+                }
+            }
+
+            document.getElementById('passed-count').textContent = passed;
+            document.getElementById('failed-count').textContent = failed;
+            summaryDiv.style.display = 'block';
+
+            originalLog(`\n${'='.repeat(40)}`);
+            originalLog(`Results: ${passed} passed, ${failed} failed`);
+            originalLog('='.repeat(40));
+        }
+
+        // WebSocket live tester
+        let ws = null;
+
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('message-log');
+            const div = document.createElement('div');
+            div.className = `message ${type}`;
+            div.textContent = `${new Date().toLocaleTimeString()} - ${typeof message === 'object' ? JSON.stringify(message) : message}`;
+            logDiv.appendChild(div);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function updateConnectionStatus(connected) {
+            const statusDiv = document.getElementById('connection-status');
+            if (connected) {
+                statusDiv.className = 'connection-status connected';
+                statusDiv.textContent = 'Connected';
+            } else {
+                statusDiv.className = 'connection-status disconnected';
+                statusDiv.textContent = 'Disconnected';
+            }
+        }
+
+        function connectWS() {
+            if (ws) {
+                ws.close();
+            }
+
+            const serverUrl = prompt('Enter WebSocket URL:', 'ws://localhost:8080/ws');
+            if (!serverUrl) return;
+
+            log(`Connecting to ${serverUrl}...`, 'info');
+            ws = new WebSocket(serverUrl, 'json');
+
+            ws.onopen = () => {
+                log('Connected!', 'info');
+                updateConnectionStatus(true);
+            };
+
+            ws.onmessage = (event) => {
+                log(`Received: ${event.data}`, 'received');
+                try {
+                    const msg = JSON.parse(event.data);
+                    if (msg.type === 'error') {
+                        log(`Error: ${msg.payload.message}`, 'error');
+                    }
+                } catch (e) {}
+            };
+
+            ws.onerror = (event) => {
+                log('WebSocket error occurred', 'error');
+            };
+
+            ws.onclose = (event) => {
+                log(`Closed: ${event.code} ${event.reason}`, 'info');
+                updateConnectionStatus(false);
+            };
+        }
+
+        function disconnectWS() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+
+        function sendJoin() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('Not connected', 'error');
+                return;
+            }
+
+            const roomId = document.getElementById('room-id-input')?.value || 'test-room';
+            const msg = createJoinRoomMessage(
+                roomId,
+                'test-player-' + Math.random().toString(36).substr(2, 9),
+                'TestPlayer',
+                '#22c55e'
+            );
+
+            log(`Sending: ${JSON.stringify(msg)}`, 'sent');
+            ws.send(JSON.stringify(msg));
+        }
+
+        function sendInput() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('Not connected', 'error');
+                return;
+            }
+
+            const directions = ['up', 'down', 'left', 'right'];
+            const dir = directions[Math.floor(Math.random() * directions.length)];
+            const msg = createPlayerInputMessage(dir);
+
+            log(`Sending: ${JSON.stringify(msg)}`, 'sent');
+            ws.send(JSON.stringify(msg));
+        }
+
+        function sendLeave() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('Not connected', 'error');
+                return;
+            }
+
+            const msg = createLeaveRoomMessage('', 'test-player');
+            log(`Sending: ${JSON.stringify(msg)}`, 'sent');
+            ws.send(JSON.stringify(msg));
+        }
+
+        // Auto-run tests on load
+        window.addEventListener('load', () => {
+            setTimeout(runAllTests, 100);
+        });
+    </script>
+</body>
+</html>

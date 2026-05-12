@@ -100,6 +100,14 @@ func (c *Connection) IsClosed() bool {
 	return c.closed
 }
 
+// SetContext sets the context for the connection (for testing).
+func (c *Connection) SetContext(ctx context.Context, cancel context.CancelFunc) {
+	c.mu.Lock()
+	c.ctx = ctx
+	c.cancel = cancel
+	c.mu.Unlock()
+}
+
 // readPump reads messages from the client.
 func (c *Connection) readPump() {
 	defer func() {
