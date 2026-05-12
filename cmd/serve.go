@@ -135,7 +135,7 @@ func handleWebSocket(connHub *network.Hub, mm *matchmaker.Matchmaker) echo.Handl
 		connHub.Register(netConn)
 
 		// Handle connection lifecycle
-		go handleClientConnection(netConn, connHub, mm, c.Request().Context())
+		go handleClientConnection(netConn, connHub, mm, context.Background())
 
 		return nil
 	}
