@@ -195,6 +195,8 @@ func (e *Engine) Tick(directions map[string]models.Direction) {
 	}
 
 	// Check game over condition
+	// Only end when all snakes are dead. Single-player and multiplayer
+	// both continue until the last snake dies from a collision.
 	alive := len(e.state.Snakes)
 	if alive == 0 {
 		e.state.GameOver = true
@@ -202,7 +204,6 @@ func (e *Engine) Tick(directions map[string]models.Direction) {
 	} else if alive == 1 {
 		for playerID := range e.state.Snakes {
 			e.state.Winner = playerID
-			e.state.GameOver = true
 		}
 	}
 

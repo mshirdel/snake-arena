@@ -43,7 +43,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		Server: ServerConfig{
 			Port:            8080,
-			Host:            "localhost",
+			Host:            "0.0.0.0",
 			ReadTimeout:     10 * time.Second,
 			WriteTimeout:    10 * time.Second,
 			ShutdownTimeout: 30 * time.Second,

@@ -20,3 +20,15 @@ test-e2e:
 	go test ./e2e/... -v -vet=off
 
 test-all: test test-e2e
+
+# Frontend E2E tests (requires Playwright)
+# Install: cd frontend && npm install
+# Run: cd frontend && npx playwright test
+test-frontend:
+	cd frontend && npx playwright test
+
+test-frontend-ui:
+	cd frontend && npx playwright test --ui
+
+test-frontend-headed:
+	cd frontend && npx playwright test --headed

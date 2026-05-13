@@ -133,7 +133,7 @@ func handleWebSocket(connHub *network.Hub, mm *matchmaker.Matchmaker) echo.Handl
 	return func(c echo.Context) error {
 		conn, err := websocket.Accept(c.Response().Unwrap(), c.Request(), &websocket.AcceptOptions{
 			Subprotocols:   []string{"json"},
-			OriginPatterns: []string{"localhost:9000"},
+			OriginPatterns: []string{"*"},
 		})
 		if err != nil {
 			return err

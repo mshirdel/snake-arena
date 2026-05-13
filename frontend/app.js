@@ -196,7 +196,9 @@ async function fetchRoomId() {
     const response = await fetch(`${app.httpServerUrl}/rooms`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
+        body: JSON.stringify({
+            "room_id": "room_" + Math.random().toString(36).substr(2, 9)
+        })
     });
 
     if (!response.ok) {
@@ -479,11 +481,9 @@ function generateId() {
  * Get server URLs based on current location
  */
 function updateServerUrls() {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host || 'localhost:8080';
-
-    app.httpServerUrl = `http://${host}`;
-    app.wsServerUrl = `${protocol}//${host}/ws`;
+    const host = window.location.hostname || 'localhost';
+    app.httpServerUrl = `http://${host}:8080`;
+    app.wsServerUrl = `ws://${host}:8080/ws`;
 }
 
 // Initialize on DOM ready
