@@ -209,13 +209,18 @@ func handleJoinRoom(conn *network.Connection, connHub *network.Hub, mm *matchmak
 	}
 
 	// Validate input
-	if req.RoomID == "" || req.PlayerID == "" {
+	if req.PlayerID == "" {
 		errMsg, _ := protocol.NewMessage(protocol.MessageTypeError, protocol.ErrorMessage{
 			Code:    "missing_fields",
-			Message: "room_id and player_id are required",
+			Message: "player_id is required",
 		})
 		conn.SendMessage(errMsg)
 		return
+	}
+
+	// Auto-assign room if not specified
+	if req.RoomID == "" {
+		req.RoomID = mm.FindOrCreateRoom()
 	}
 
 	// Update connection

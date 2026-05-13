@@ -3,6 +3,7 @@ package matchmaker
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/mshirdel/snake/internal/models"
 	"github.com/mshirdel/snake/internal/network"
@@ -139,4 +140,25 @@ func (m *Matchmaker) Shutdown() {
 		r.Close()
 	}
 	m.rooms = make(map[string]*room.Room)
+}
+
+// FindOrCreateRoom finds an available room or creates a new one.
+func (m *Matchmaker) FindOrCreateRoom() string {
+	m.mu.RLock()
+	for id, r := range m.rooms {
+		if r.GetPlayerCount() < m.config.MaxPlayers && !r.GetState().GameOver {
+			m.mu.RUnlock()
+			return id
+		}
+	}
+	m.mu.RUnlock()
+
+	id := fmt.Sprintf("room_%d", atomic.AddUint32(&m.roomID, 1))
+	r, err := m.CreateRoom(id)
+	if err != nil {
+		// Rare race: room was created between unlock and CreateRoom
+		return id
+	}
+	_ = r
+	return id
 }

@@ -11,7 +11,6 @@ const app = {
     selectedColor: '#22c55e',
     isConnected: false,
     renderer: null,
-    httpServerUrl: 'http://localhost:8080',
     wsServerUrl: 'ws://localhost:8080/ws'
 };
 
@@ -141,7 +140,6 @@ async function handleJoinSubmit(e) {
     e.preventDefault();
 
     const playerName = document.getElementById('player-name').value.trim();
-    const roomIdInput = document.getElementById('room-id').value.trim();
 
     if (!playerName) {
         showConnectError('Please enter your name');
@@ -151,19 +149,6 @@ async function handleJoinSubmit(e) {
     // Generate player ID
     app.playerId = 'player_' + Math.random().toString(36).substr(2, 9);
 
-    // Get or create room ID
-    let roomId = roomIdInput;
-    if (!roomId) {
-        try {
-            roomId = await fetchRoomId();
-        } catch (error) {
-            showConnectError('Failed to create room');
-            return;
-        }
-    }
-
-    app.roomId = roomId;
-
     // Connect to WebSocket
     try {
         await network.connect(app.wsServerUrl);
@@ -171,9 +156,9 @@ async function handleJoinSubmit(e) {
         // Initialize game
         game.init(app.playerId, playerName, app.selectedColor);
 
-        // Send join message
+        // Send join message with empty room_id — server auto-assigns
         const joinMsg = createJoinRoomMessage(
-            app.roomId,
+            '',
             app.playerId,
             playerName,
             app.selectedColor
@@ -187,56 +172,6 @@ async function handleJoinSubmit(e) {
     } catch (error) {
         showConnectError('Failed to connect to server');
     }
-}
-
-/**
- * Fetch a room ID from the server.
- * Tries to join an existing room with space, otherwise creates a new one
- * with a memorable name.
- */
-async function fetchRoomId() {
-    // Try to find an available room
-    try {
-        const listResponse = await fetch(`${app.httpServerUrl}/rooms`);
-        if (listResponse.ok) {
-            const { rooms } = await listResponse.json();
-            const available = (rooms || []).find(
-                r => !r.game_over && r.players < r.max_players
-            );
-            if (available) {
-                return available.room_id;
-            }
-        }
-    } catch (e) {
-        // List failed, fall through to create a new room
-    }
-
-    // No room available — create one with a memorable name
-    const roomId = generateRoomName();
-    const response = await fetch(`${app.httpServerUrl}/rooms`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ room_id: roomId })
-    });
-
-    if (!response.ok) {
-        throw new Error('Failed to create room');
-    }
-
-    const data = await response.json();
-    return data.room_id;
-}
-
-/**
- * Generate a memorable room name like "blue-fox-42"
- */
-function generateRoomName() {
-    const colors = ['red', 'blue', 'gold', 'pink', 'teal', 'cyan', 'lime', 'navy', 'jade', 'gray'];
-    const animals = ['fox', 'bear', 'wolf', 'hawk', 'deer', 'lynx', 'puma', 'crow', 'hare', 'owl'];
-    const adj = colors[Math.floor(Math.random() * colors.length)];
-    const animal = animals[Math.floor(Math.random() * animals.length)];
-    const num = Math.floor(Math.random() * 100);
-    return `${adj}-${animal}-${num}`;
 }
 
 /**
@@ -268,12 +203,8 @@ function handleLeave() {
  * Handle play again button
  */
 async function handlePlayAgain() {
-    // Disconnect and reconnect to get a new room
     network.disconnect();
     game.reset();
-
-    // Clear form and go back to connect
-    document.getElementById('room-id').value = '';
     showScreen('connect');
 }
 
@@ -284,7 +215,6 @@ function handleBackToMenu() {
     network.disconnect();
     game.reset();
     app.roomId = '';
-    document.getElementById('room-id').value = '';
     showScreen('connect');
 }
 
@@ -376,8 +306,11 @@ function handlePlayerLeft(message) {
  * Handle acknowledgment
  */
 function handleAck(message) {
-    // Optional: track message acknowledgments
-    console.log('Ack received:', message.payload);
+    const payload = message.payload;
+    if (payload.action === 'join_room' && payload.room_id) {
+        app.roomId = payload.room_id;
+        document.getElementById('current-room-id').textContent = app.roomId;
+    }
 }
 
 // ============ UI Updates ============
@@ -512,7 +445,6 @@ function generateId() {
  */
 function updateServerUrls() {
     const host = window.location.hostname || 'localhost';
-    app.httpServerUrl = `http://${host}:8080`;
     app.wsServerUrl = `ws://${host}:8080/ws`;
 }
 
