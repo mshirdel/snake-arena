@@ -190,15 +190,33 @@ async function handleJoinSubmit(e) {
 }
 
 /**
- * Fetch a room ID from the server
+ * Fetch a room ID from the server.
+ * Tries to join an existing room with space, otherwise creates a new one
+ * with a memorable name.
  */
 async function fetchRoomId() {
+    // Try to find an available room
+    try {
+        const listResponse = await fetch(`${app.httpServerUrl}/rooms`);
+        if (listResponse.ok) {
+            const { rooms } = await listResponse.json();
+            const available = (rooms || []).find(
+                r => !r.game_over && r.players < r.max_players
+            );
+            if (available) {
+                return available.room_id;
+            }
+        }
+    } catch (e) {
+        // List failed, fall through to create a new room
+    }
+
+    // No room available — create one with a memorable name
+    const roomId = generateRoomName();
     const response = await fetch(`${app.httpServerUrl}/rooms`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            "room_id": "room_" + Math.random().toString(36).substr(2, 9)
-        })
+        body: JSON.stringify({ room_id: roomId })
     });
 
     if (!response.ok) {
@@ -207,6 +225,18 @@ async function fetchRoomId() {
 
     const data = await response.json();
     return data.room_id;
+}
+
+/**
+ * Generate a memorable room name like "blue-fox-42"
+ */
+function generateRoomName() {
+    const colors = ['red', 'blue', 'gold', 'pink', 'teal', 'cyan', 'lime', 'navy', 'jade', 'gray'];
+    const animals = ['fox', 'bear', 'wolf', 'hawk', 'deer', 'lynx', 'puma', 'crow', 'hare', 'owl'];
+    const adj = colors[Math.floor(Math.random() * colors.length)];
+    const animal = animals[Math.floor(Math.random() * animals.length)];
+    const num = Math.floor(Math.random() * 100);
+    return `${adj}-${animal}-${num}`;
 }
 
 /**
