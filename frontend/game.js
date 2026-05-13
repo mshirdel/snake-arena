@@ -134,16 +134,14 @@ class Game {
      * @returns {string} - 'up', 'down', 'left', 'right', or ''
      */
     getCurrentDirection() {
+        if (this.lastInputDirection) {
+            return this.lastInputDirection;
+        }
+
         const snake = this.getPlayerSnake();
-        if (!snake || snake.body.length < 2) return '';
-
-        const head = snake.body[0];
-        const neck = snake.body[1];
-
-        if (head.x < neck.x) return 'left';
-        if (head.x > neck.x) return 'right';
-        if (head.y < neck.y) return 'up';
-        if (head.y > neck.y) return 'down';
+        if (snake && snake.direction) {
+            return snake.direction;
+        }
 
         return '';
     }

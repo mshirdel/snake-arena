@@ -70,6 +70,7 @@ type SnakeData struct {
 	Color     string      `json:"color"`
 	Length    int         `json:"length"`
 	Alive     bool        `json:"alive"`
+	Direction string      `json:"direction"`
 }
 
 // FoodData for transmission.

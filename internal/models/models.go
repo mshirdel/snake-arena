@@ -12,10 +12,11 @@ type Vector2D struct {
 
 // Snake represents a player's snake with its body segments.
 type Snake struct {
-	PlayerID string     `json:"player_id"`
-	Head     Vector2D   `json:"head"`
-	Body     []Vector2D `json:"body"`
-	Color    string     `json:"color"`
+	PlayerID  string     `json:"player_id"`
+	Head      Vector2D   `json:"head"`
+	Body      []Vector2D `json:"body"`
+	Color     string     `json:"color"`
+	Direction Direction  `json:"direction"`
 }
 
 // Food represents food on the board.

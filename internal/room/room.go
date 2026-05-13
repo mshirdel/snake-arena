@@ -205,7 +205,8 @@ func (r *Room) broadcastGameState() {
 			Body:   convertVectors(snake.Body),
 			Color:  snake.Color,
 			Length: len(snake.Body) + 1,
-			Alive:  true,
+			Alive:     true,
+				Direction: directionToString(snake.Direction),
 		}
 	}
 
@@ -271,4 +272,20 @@ func convertVectors(vecs []models.Vector2D) []protocol.VectorData {
 		result[i] = protocol.VectorData{X: v.X, Y: v.Y}
 	}
 	return result
+}
+
+// directionToString converts a direction to its string representation.
+func directionToString(d models.Direction) string {
+	switch d {
+	case models.DirectionUp:
+		return "up"
+	case models.DirectionDown:
+		return "down"
+	case models.DirectionLeft:
+		return "left"
+	case models.DirectionRight:
+		return "right"
+	default:
+		return ""
+	}
 }

@@ -60,10 +60,11 @@ func (e *Engine) AddPlayer(playerID string, color string) error {
 	}
 
 	e.state.Snakes[playerID] = &models.Snake{
-		PlayerID: playerID,
-		Head:     head,
-		Body:     body,
-		Color:    color,
+		PlayerID:  playerID,
+		Head:      head,
+		Body:      body,
+		Color:     color,
+		Direction: models.DirectionRight,
 	}
 
 	return nil
@@ -106,11 +107,19 @@ func (e *Engine) Tick(directions map[string]models.Direction) {
 
 	e.state.Tick++
 
-	// 1. Move snakes
-	for playerID, dir := range directions {
-		if snake, exists := e.state.Snakes[playerID]; exists && dir != models.DirectionNone {
-			e.moveSnake(snake, dir)
+	// 1. Resolve directions and move snakes
+	for playerID, snake := range e.state.Snakes {
+		dir := snake.Direction // default: keep moving forward
+
+		if queued, ok := directions[playerID]; ok && queued != models.DirectionNone {
+			// Prevent 180° reversal
+			if !e.isOpposite(queued, snake.Direction) {
+				dir = queued
+			}
 		}
+
+		snake.Direction = dir
+		e.moveSnake(snake, dir)
 	}
 
 	// Mark dead snakes
@@ -243,6 +252,14 @@ func (e *Engine) getNextPosition(pos models.Vector2D, dir models.Direction) mode
 func (e *Engine) isOutOfBounds(pos models.Vector2D) bool {
 	return pos.X < 0 || pos.X >= e.config.Width ||
 		pos.Y < 0 || pos.Y >= e.config.Height
+}
+
+// isOpposite checks if two directions are reversals of each other.
+func (e *Engine) isOpposite(a, b models.Direction) bool {
+	return (a == models.DirectionUp && b == models.DirectionDown) ||
+		(a == models.DirectionDown && b == models.DirectionUp) ||
+		(a == models.DirectionLeft && b == models.DirectionRight) ||
+		(a == models.DirectionRight && b == models.DirectionLeft)
 }
 
 // positionEquals checks if two positions are the same.
