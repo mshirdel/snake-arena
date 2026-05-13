@@ -10,6 +10,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	echoMiddleware "github.com/labstack/echo/v4/middleware"
 	"github.com/spf13/cobra"
 
 	"github.com/mshirdel/snake/internal/config"
@@ -45,6 +46,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 	e := echo.New()
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
+	e.Use(middleware.CORSWithConfig(echoMiddleware.CORSConfig{
+		AllowOrigins:     []string{"*"},
+		AllowMethods:     []string{"GET", "POST", "PATCH", "DELETE"},
+		AllowHeaders:     []string{},
+		AllowCredentials: false,
+		ExposeHeaders:    []string{},
+		MaxAge:           0,
+	}))
 
 	// Initialize network and matchmaker
 	connHub := network.NewHub()
@@ -123,7 +132,8 @@ func handleCreateRoom(mm *matchmaker.Matchmaker) echo.HandlerFunc {
 func handleWebSocket(connHub *network.Hub, mm *matchmaker.Matchmaker) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		conn, err := websocket.Accept(c.Response().Unwrap(), c.Request(), &websocket.AcceptOptions{
-			Subprotocols: []string{"json"},
+			Subprotocols:   []string{"json"},
+			OriginPatterns: []string{"localhost:9000"},
 		})
 		if err != nil {
 			return err
