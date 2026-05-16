@@ -239,20 +239,42 @@ input[type="text"]::placeholder {
 
 .snake-scores {
     display: flex;
-    gap: 15px;
+    gap: 12px;
 }
 
 .snake-score {
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
+    padding: 4px 10px;
+    background: #1a202c;
+    border-radius: 6px;
+}
+
+.snake-rank {
+    color: #f59e0b;
+    font-weight: 700;
+    font-size: 0.75rem;
+}
+
+.snake-score-name {
+    max-width: 60px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.snake-score-length {
+    color: #4ade80;
+    font-weight: 600;
 }
 
 .snake-score-color {
-    width: 12px;
-    height: 12px;
+    width: 10px;
+    height: 10px;
     border-radius: 3px;
+    flex-shrink: 0;
 }
 
 .canvas-container {

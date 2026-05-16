@@ -41,6 +41,7 @@ type GameState struct {
 type Player struct {
 	ID          string
 	RoomID      string
+	Name        string
 	Direction   Direction
 	NextDirect  Direction // buffered next direction
 	JoinedAt    time.Time

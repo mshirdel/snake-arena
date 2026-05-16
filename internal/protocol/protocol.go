@@ -64,13 +64,14 @@ type GameStateMessage struct {
 
 // SnakeData for transmission.
 type SnakeData struct {
-	PlayerID  string      `json:"player_id"`
-	Head      VectorData  `json:"head"`
-	Body      []VectorData `json:"body"`
-	Color     string      `json:"color"`
-	Length    int         `json:"length"`
-	Alive     bool        `json:"alive"`
-	Direction string      `json:"direction"`
+	PlayerID   string      `json:"player_id"`
+	PlayerName string      `json:"player_name"`
+	Head       VectorData  `json:"head"`
+	Body       []VectorData `json:"body"`
+	Color      string      `json:"color"`
+	Length     int         `json:"length"`
+	Alive      bool        `json:"alive"`
+	Direction  string      `json:"direction"`
 }
 
 // FoodData for transmission.

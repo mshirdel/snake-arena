@@ -397,12 +397,14 @@ function updateTickCounter(tick) {
  */
 function updateSnakeScores() {
     const container = document.getElementById('snake-scores');
-    const snakes = game.getSnakesArray();
+    const snakes = game.getLeaderboard();
 
-    container.innerHTML = snakes.map(snake => `
+    container.innerHTML = snakes.map((snake, index) => `
         <div class="snake-score">
+            <span class="snake-rank">#${index + 1}</span>
             <div class="snake-score-color" style="background: ${snake.color}"></div>
-            <span>${snake.length || 0}</span>
+            <span class="snake-score-name">${snake.player_name || 'Player'}</span>
+            <span class="snake-score-length">${snake.length || 0}</span>
         </div>
     `).join('');
 }

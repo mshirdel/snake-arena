@@ -84,6 +84,7 @@ func (r *Room) AddPlayer(playerID, connID, playerName, color string) error {
 	r.players[playerID] = &models.Player{
 		ID:       playerID,
 		RoomID:   r.ID,
+		Name:     playerName,
 		JoinedAt: time.Now(),
 	}
 
@@ -196,17 +197,22 @@ func (r *Room) broadcastGameState() {
 	// Convert to protocol message
 	snakes := make(map[string]protocol.SnakeData)
 	for playerID, snake := range state.Snakes {
+		playerName := ""
+		if p, ok := r.players[playerID]; ok {
+			playerName = p.Name
+		}
 		snakes[playerID] = protocol.SnakeData{
-			PlayerID: snake.PlayerID,
+			PlayerID:   snake.PlayerID,
+			PlayerName: playerName,
 			Head: protocol.VectorData{
 				X: snake.Head.X,
 				Y: snake.Head.Y,
 			},
-			Body:   convertVectors(snake.Body),
-			Color:  snake.Color,
-			Length: len(snake.Body) + 1,
+			Body:      convertVectors(snake.Body),
+			Color:     snake.Color,
+			Length:    len(snake.Body) + 1,
 			Alive:     true,
-				Direction: directionToString(snake.Direction),
+			Direction: directionToString(snake.Direction),
 		}
 	}
 
