@@ -145,6 +145,8 @@ func (ts *TestServer) handleMessage(conn *network.Connection, msg *protocol.Mess
 		ts.handlePlayerInput(conn, msg)
 	case protocol.MessageTypeLeaveRoom:
 		ts.handleLeaveRoom(conn, msg)
+	case protocol.MessageTypePlayAgain:
+		ts.handlePlayAgain(conn, msg)
 	default:
 		ts.sendError(conn, "unknown_message_type", "unsupported message type")
 	}
@@ -219,6 +221,26 @@ func (ts *TestServer) handleLeaveRoom(conn *network.Connection, msg *protocol.Me
 	ts.Matchmaker.LeaveRoom(conn.RoomID, conn.PlayerID)
 	conn.PlayerID = ""
 	conn.RoomID = ""
+}
+
+func (ts *TestServer) handlePlayAgain(conn *network.Connection, msg *protocol.Message) {
+	if conn.PlayerID == "" || conn.RoomID == "" {
+		ts.sendError(conn, "not_in_room", "player is not in a room")
+		return
+	}
+
+	var req protocol.PlayAgainRequest
+	if err := msg.UnmarshalPayload(&req); err != nil {
+		ts.sendError(conn, "invalid_payload", "failed to parse play again request")
+		return
+	}
+
+	ts.Matchmaker.HandlePlayAgain(conn.PlayerID, conn.RoomID, req.PlayAgain)
+
+	if !req.PlayAgain {
+		conn.PlayerID = ""
+		conn.RoomID = ""
+	}
 }
 
 func (ts *TestServer) sendError(conn *network.Connection, code, message string) {
@@ -324,6 +346,13 @@ func (c *WebSocketClient) SendInput(direction string) error {
 
 func (c *WebSocketClient) LeaveRoom() error {
 	msg, _ := protocol.NewMessage(protocol.MessageTypeLeaveRoom, protocol.LeaveRoomRequest{})
+	return c.Send(*msg)
+}
+
+func (c *WebSocketClient) SendPlayAgain(playAgain bool) error {
+	msg, _ := protocol.NewMessage(protocol.MessageTypePlayAgain, protocol.PlayAgainRequest{
+		PlayAgain: playAgain,
+	})
 	return c.Send(*msg)
 }
 

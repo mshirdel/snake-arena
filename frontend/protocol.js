@@ -8,6 +8,7 @@ const MessageType = {
     JoinRoom: 'join_room',
     PlayerInput: 'player_input',
     LeaveRoom: 'leave_room',
+    PlayAgain: 'play_again',
 
     // Server messages
     GameState: 'game_state',
@@ -16,7 +17,12 @@ const MessageType = {
     Error: 'error',
     PlayerJoined: 'player_joined',
     PlayerLeft: 'player_left',
-    Ack: 'ack'
+    PlayerDied: 'player_died',
+    Ack: 'ack',
+
+    // Ping/Pong for latency measurement
+    Ping: 'ping',
+    Pong: 'pong'
 };
 
 /**
@@ -70,6 +76,17 @@ function createLeaveRoomMessage(roomId, playerId) {
     return createMessage(MessageType.LeaveRoom, {
         room_id: roomId,
         player_id: playerId
+    });
+}
+
+/**
+ * Create a PlayAgain message
+ * @param {boolean} playAgain - true to respawn, false to quit
+ * @returns {object} - PlayAgain message
+ */
+function createPlayAgainMessage(playAgain) {
+    return createMessage(MessageType.PlayAgain, {
+        play_again: playAgain
     });
 }
 

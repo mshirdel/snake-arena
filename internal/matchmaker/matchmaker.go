@@ -105,6 +105,29 @@ func (m *Matchmaker) HandlePlayerInput(playerID, roomID string, direction models
 	return nil
 }
 
+// HandlePlayAgain processes a player's decision to respawn or quit after death.
+func (m *Matchmaker) HandlePlayAgain(playerID, roomID string, playAgain bool) error {
+	m.mu.RLock()
+	r, ok := m.rooms[roomID]
+	m.mu.RUnlock()
+
+	if !ok {
+		return fmt.Errorf("room not found")
+	}
+
+	r.HandlePlayAgain(playerID, playAgain)
+
+	// Clean up empty rooms after player quit
+	if !playAgain && r.GetPlayerCount() == 0 {
+		m.mu.Lock()
+		delete(m.rooms, roomID)
+		m.mu.Unlock()
+		r.Close()
+	}
+
+	return nil
+}
+
 // GetRoomCount returns the number of active rooms.
 func (m *Matchmaker) GetRoomCount() int {
 	m.mu.RLock()

@@ -179,6 +179,15 @@ func (r *Room) processTick() {
 	// Broadcast updated game state
 	r.broadcastGameState()
 
+	// Notify newly dead players
+	newlyDead := r.engine.GetNewlyDeadPlayers()
+	for playerID, reason := range newlyDead {
+		r.sendToPlayer(playerID, protocol.MessageTypePlayerDied, protocol.PlayerDiedMessage{
+			PlayerID: playerID,
+			Reason:   reason,
+		})
+	}
+
 	// Check if game is over
 	state := r.engine.GetState()
 	if state.GameOver {
@@ -211,7 +220,7 @@ func (r *Room) broadcastGameState() {
 			Body:      convertVectors(snake.Body),
 			Color:     snake.Color,
 			Length:    len(snake.Body) + 1,
-			Alive:     true,
+			Alive:     !snake.Dead,
 			Direction: directionToString(snake.Direction),
 		}
 	}
@@ -254,6 +263,44 @@ func (r *Room) GetState() *models.GameState {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.engine.GetState()
+}
+
+// HandlePlayAgain processes a player's decision to respawn or quit after death.
+func (r *Room) HandlePlayAgain(playerID string, playAgain bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if playAgain {
+		if err := r.engine.RespawnPlayer(playerID); err != nil {
+			return
+		}
+		// Broadcast updated state so all clients see the respawn
+		r.broadcastGameState()
+	} else {
+		// Player chose to quit — remove them
+		if _, exists := r.players[playerID]; !exists {
+			return
+		}
+		delete(r.players, playerID)
+		r.engine.RemovePlayer(playerID)
+
+		msg, _ := protocol.NewMessage(protocol.MessageTypePlayerLeft, map[string]string{
+			"player_id": playerID,
+		})
+		r.connHub.BroadcastToRoom(r.ID, msg)
+	}
+}
+
+// sendToPlayer sends a message to a specific player in the room.
+func (r *Room) sendToPlayer(playerID string, msgType protocol.MessageType, payload interface{}) {
+	conns := r.connHub.GetConnectionsInRoom(r.ID)
+	for _, conn := range conns {
+		if conn.PlayerID == playerID {
+			msg, _ := protocol.NewMessage(msgType, payload)
+			conn.SendMessage(msg)
+			return
+		}
+	}
 }
 
 // Close closes the room.

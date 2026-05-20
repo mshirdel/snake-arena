@@ -1,476 +1,151 @@
-# Multiplayer Snake Game Backend Architecture
+# Snake Arena — Backend
 
-## Project
+Real-time multiplayer Snake game server written in Go. The server is fully authoritative — clients send only input intents, and all game simulation runs server-side on a fixed tick rate.
 
-Realtime multiplayer Snake game backend written in Go.
+## Quick Start
 
-The backend is an authoritative game server responsible for:
-
-- websocket communication
-- game loop execution
-- collision handling
-- room management
-- matchmaking
-- state synchronization
-- anti-cheat validation
-
-Frontend is implemented separately using pure JavaScript + HTML5 Canvas.
-
----
-
-# Core Architecture Principles
-
-## 1. Server Authoritative
-
-The server is the single source of truth.
-
-Clients are NOT allowed to:
-
-- move themselves directly
-- update coordinates
-- resolve collisions
-- spawn food
-- modify scores
-
-Clients only send:
-
-- input events
-- room join requests
-- ping/pong
-
-All game simulation happens on the server.
-
----
-
-## 2. Tick-Based Simulation
-
-Game logic must run on a fixed tick rate.
-
-Recommended:
-
-- 10 ticks/sec initially
-
-Never update game state directly from websocket handlers.
-
-All player inputs must be queued and consumed during the next game tick.
-
----
-
-## 3. Deterministic Game Loop
-
-Each room owns exactly one game loop.
-
-A room loop is responsible for:
-
-1. processing queued inputs
-2. updating snake positions
-3. resolving collisions
-4. handling food consumption
-5. spawning food
-6. broadcasting snapshots
-
-Avoid timing inconsistencies.
-
----
-
-# Project Structure
-
-````text
-/cmd/server
-    main.go
-
-/internal
-    /config
-    /game
-    /room
-    /engine
-    /network
-    /matchmaker
-    /protocol
-    /storage
-    /models
-    /utils
-
-/pkg
-
----
-
-# Package Responsibilities
-
-## /network
-
-Responsible for:
-
-* websocket upgrade
-* connection lifecycle
-* client write/read pumps
-* serialization
-* broadcast delivery
-
-Must NOT contain game logic.
-
----
-
-## /game
-
-Pure gameplay logic:
-
-* snake movement
-* collision detection
-* food spawning
-* score handling
-
-Should be deterministic and testable.
-
-Must avoid network dependencies.
-
----
-
-## /room
-
-Responsible for:
-
-* room lifecycle
-* room state
-* tick loop
-* player membership
-
-Each room owns:
-
-* game state
-* player list
-* tick scheduler
-* input queue
-
----
-
-## /engine
-
-Contains:
-
-* update orchestration
-* simulation sequencing
-* tick coordination
-
-Acts as runtime execution layer.
-
----
-
-## /matchmaker
-
-Responsible for:
-
-* assigning players to rooms
-* room creation
-* room balancing
-
-No gameplay logic here.
-
----
-
-## /protocol
-
-Contains:
-
-* websocket message definitions
-* DTOs
-* event types
-* serialization contracts
-
-All messages should be versionable.
-
----
-
-# Coding Standards
-
-## General
-
-* Keep packages small and cohesive
-* Prefer composition over inheritance-like abstractions
-* Avoid global mutable state
-* Avoid circular dependencies
-* Avoid framework-heavy architecture
-
----
-
-## Concurrency
-
-Concurrency must be explicit and controlled.
-
-Allowed:
-
-* goroutine per websocket client
-* goroutine per room loop
-
-Avoid:
-
-* uncontrolled goroutine spawning
-* shared mutable maps without synchronization
-
-Prefer:
-
-* channels
-* message passing
-* room ownership model
-
----
-
-## State Ownership
-
-Each room exclusively owns its game state.
-
-Other goroutines must NOT mutate room state directly.
-
-Interaction with rooms should happen through:
-
-* channels
-* command queues
-* room methods
-
----
-
-# Networking Rules
-
-## Transport
-
-Use WebSocket for realtime communication.
-
-Communication format:
-
-* JSON initially
-* binary protocol later if needed
-
----
-
-## Client Input
-
-Clients send only intent.
-
-Example:
-
-```json
-{
-  "type": "input",
-  "direction": "left"
-}
-````
-
-Never trust client coordinates.
-
----
-
-## Snapshot Broadcast
-
-Server periodically broadcasts snapshots.
-
-Example:
-
-```json
-{
-  "type": "state",
-  "tick": 102,
-  "players": [],
-  "foods": []
-}
+```bash
+make run
 ```
 
-Snapshots should be immutable once emitted.
-
----
-
-# Game Rules
-
-## Snake Movement
-
-Rules:
-
-- movement occurs only on tick
-- snake cannot reverse direction instantly
-- movement speed is uniform
-
----
-
-## Collision Resolution Order
-
-Always resolve collisions in deterministic order:
-
-1. next positions
-2. wall collisions
-3. snake-to-snake collisions
-4. self collisions
-5. food consumption
-6. snake growth
-7. cleanup dead snakes
-
----
-
-# Error Handling
-
-Rules:
-
-- never panic on invalid client input
-- invalid packets should disconnect client gracefully
-- recover from room crashes if possible
-- log all fatal simulation errors
-
----
-
-# Logging
-
-Structured logging preferred.
-
-Include:
-
-- room_id
-- player_id
-- tick
-- event_type
-
-Avoid excessive debug logging in hot paths.
-
----
-
-# Performance Guidelines
-
-Avoid:
-
-- allocations inside tick loop
-- excessive JSON marshaling
-- large mutex contention
-
-Prefer:
-
-- object reuse
-- preallocated slices
-- room-local state
-
----
-
-# Testing Strategy
-
-Must have tests for:
-
-- movement logic
-- collision detection
-- food spawning
-- direction validation
-- room lifecycle
-
-Gameplay logic should be testable without websocket layer.
-
----
-
-# Security Rules
-
-Never trust client data.
-
-Validate:
-
-- direction changes
-- packet sizes
-- message types
-- reconnect attempts
-
-Protect against:
-
-- packet flooding
-- malformed JSON
-- room exhaustion
-
----
-
-# Future Scalability
-
-Initial deployment:
-
-- single process
-- in-memory rooms
-
-Future scaling:
-
-- Redis pub/sub
-- room sharding
-- sticky sessions
-- horizontal scaling
-
-Design code to allow future distributed architecture.
-
----
-
-# Recommended Libraries
-
-## WebSocket
-
-Primary:
-
-- gorilla/websocket
-
-Alternative:
-
-- coder/websocket
-
----
-
-# Deployment
-
-Initial deployment target:
-
-- Docker container
-- single binary
-- behind NGINX reverse proxy
-
----
-
-# Non-Goals (Initial MVP)
-
-Do NOT implement initially:
-
-- rollback netcode
-- ECS architecture
-- microservices
-- distributed simulation
-- Kubernetes orchestration
-- prediction/interpolation
-- persistence layer
-- authentication system
-
-Focus on:
-
-- correctness
-- deterministic simulation
-- stable multiplayer sync
-
----
-
-# Development Order
-
-1. Single room
-2. Tick loop
-3. Snake movement
-4. WebSocket communication
-5. Multiplayer sync
-6. Collision handling
-7. Food system
-8. Matchmaking
-9. Spectating
-10. Horizontal scaling
-
----
-
-# Architectural Rules
-
-## DO
-
-- keep simulation deterministic
-- isolate room state
-- queue inputs
-- separate network and game logic
-- keep update loop predictable
-
-## DO NOT
-
-- mutate game state from websocket handlers
-- trust client coordinates
-- block inside room loop
-- share room state across goroutines
-- over-engineer early MVP
+The server starts on `http://0.0.0.0:8080`.
+
+## Build
+
+```bash
+make build    # Build binary to bin/snake
+make clean    # Remove bin/
+```
+
+## Test
+
+```bash
+make test              # Run all Go tests
+make test-e2e          # Run integration tests only
+make test-all          # Run all Go tests + integration tests
+make test-frontend     # Run Playwright frontend tests
+```
+
+Run a single package:
+
+```bash
+go test ./internal/game/...
+```
+
+## Docker
+
+```bash
+docker build -t snake-server .
+docker run -p 8080:8080 snake-server
+```
+
+## Architecture
+
+```
+cmd/                    CLI entry point (Cobra)
+  serve.go              Starts HTTP/WS server via Echo
+internal/
+  config/               Server, game, and network configuration
+  game/                 Deterministic game engine (tick-based simulation)
+  matchmaker/           Room creation, joining, matchmaking
+  models/               Core data types (Snake, GameState, Player, etc.)
+  network/              WebSocket connection wrapper and hub
+  protocol/             Wire protocol — message types and JSON structs
+  room/                 Game room lifecycle and tick loop
+e2e/                    Go integration tests (in-process WS server)
+doc/                    OpenAPI 3.0 spec
+```
+
+### Key design rules
+
+- **No mutations from WebSocket handlers.** All player inputs are queued and consumed during the next game tick.
+- **Each room owns its state exclusively.** No shared mutable state across goroutines. Communication through channels and command queues only.
+- **Tick-based determinism.** Game logic runs at a fixed tick rate (10 ticks/sec). Movement, collisions, food, and respawns all resolve in deterministic order each tick.
+- **Network is separate from game logic.** `network/` handles WebSocket lifecycle only. `game/` contains pure deterministic simulation.
+
+### Collision resolution order
+
+1. Next positions
+2. Wall collisions
+3. Snake-to-snake collisions
+4. Self collisions
+5. Food consumption
+6. Snake growth
+7. Mark newly dead snakes
+8. Spawn food if needed
+
+## Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/rooms` | GET | List active rooms |
+| `/rooms` | POST | Create a new room (`{room_id: string}`) |
+| `/ws` | GET (WebSocket) | Game connection (JSON subprotocol) |
+
+## WebSocket Protocol
+
+All messages are JSON with the shape `{type: string, payload: object}`.
+
+### Client → Server
+
+| Type | Payload | Description |
+|------|---------|-------------|
+| `join_room` | `{room_id, player_id, player_name, color}` | Join or create a room |
+| `player_input` | `{direction}` | Send direction: `up`, `down`, `left`, `right` |
+| `leave_room` | `{room_id, player_id}` | Leave the current room |
+| `play_again` | `{play_again: bool}` | `true` to respawn after death, `false` to quit |
+| `ping` | `{timestamp}` | Latency measurement |
+
+### Server → Client
+
+| Type | Payload | Description |
+|------|---------|-------------|
+| `game_state` | Full state with snakes, food, tick, dimensions | Broadcast every tick |
+| `player_joined` | `{player_id, player_name, color}` | A player joined the room |
+| `player_left` | `{player_id}` | A player left the room |
+| `player_died` | `{player_id, reason}` | Sent to the dead player only. Reason: `wall`, `collision`, `self` |
+| `game_end` | `{room_id, winner}` | Game over (all players gone) |
+| `ack` | `{action, room_id}` | Acknowledges join/leave |
+| `error` | `{code, message}` | Error response |
+| `pong` | `{timestamp}` | Latency response |
+
+### Message flow
+
+1. Client connects to `/ws`
+2. Client sends `join_room` (empty `room_id` for auto-assign)
+3. Server sends `ack` + broadcasts `player_joined` + `game_state`
+4. Client sends `player_input` each time the player presses a direction
+5. Server queues input, processes on next tick, broadcasts `game_state`
+6. If the player dies, server sends `player_died` to that client only
+7. Client sends `play_again: true` to respawn or `play_again: false` to leave
+8. Client sends `leave_room` to disconnect gracefully
+
+## Configuration
+
+Defaults in `internal/config/config.go`:
+
+| Section | Key | Default |
+|---------|-----|---------|
+| Server | port | 8080 |
+| Server | host | 0.0.0.0 |
+| Game | tick_rate | 10 ticks/sec |
+| Game | board | 40 x 30 |
+| Game | max_players_per_room | 4 |
+| Game | default_food_count | 5 |
+| Game | snake_start_length | 3 |
+| Network | max_message_size | 64 KB |
+| Network | write_timeout | 10s |
+| Network | ping_interval | 30s |
+
+## Dependencies
+
+| Package | Purpose |
+|---------|---------|
+| `github.com/labstack/echo/v4` | HTTP framework |
+| `github.com/coder/websocket` | WebSocket library |
+| `github.com/spf13/cobra` | CLI framework |
+
+## API Spec
+
+Full OpenAPI 3.0 spec is at `doc/openapi.yaml`.

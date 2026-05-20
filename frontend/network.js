@@ -18,6 +18,12 @@ class NetworkManager {
         this.maxReconnectAttempts = 5;
         this.reconnectDelay = 1000;
         this.shouldReconnect = false;
+
+        // Latency measurement
+        this.rttSamples = [];
+        this.maxRttSamples = 5;
+        this.pingInterval = null;
+        this.pingIntervalMs = 2000;
     }
 
     /**
@@ -37,6 +43,7 @@ class NetworkManager {
                     console.log('WebSocket connected');
                     this.connected = true;
                     this.reconnectAttempts = 0;
+                    this.startPing();
                     if (this.connectionHandlers.onOpen) {
                         this.connectionHandlers.onOpen(event);
                     }
@@ -158,6 +165,7 @@ class NetworkManager {
      */
     disconnect() {
         this.shouldReconnect = false;
+        this.stopPing();
         if (this.ws) {
             this.ws.close();
             this.ws = null;
@@ -179,6 +187,59 @@ class NetworkManager {
      */
     getReadyState() {
         return this.ws ? this.ws.readyState : WebSocket.CLOSED;
+    }
+
+    /**
+     * Start periodic ping to measure latency
+     */
+    startPing() {
+        this.stopPing();
+        this.rttSamples = [];
+
+        // Register pong handler
+        this.on(MessageType.Pong, (message) => {
+            const now = Date.now();
+            const rtt = now - message.payload.timestamp;
+            this.rttSamples.push(rtt);
+            if (this.rttSamples.length > this.maxRttSamples) {
+                this.rttSamples.shift();
+            }
+        });
+
+        // Send first ping immediately
+        this._sendPing();
+
+        this.pingInterval = setInterval(() => this._sendPing(), this.pingIntervalMs);
+    }
+
+    /**
+     * Stop ping loop
+     */
+    stopPing() {
+        if (this.pingInterval) {
+            clearInterval(this.pingInterval);
+            this.pingInterval = null;
+        }
+        this.off(MessageType.Pong);
+        this.rttSamples = [];
+    }
+
+    /**
+     * Send a ping message
+     */
+    _sendPing() {
+        if (!this.connected) return;
+        this.send(createMessage(MessageType.Ping, { timestamp: Date.now() }));
+    }
+
+    /**
+     * Get smoothed round-trip latency in milliseconds
+     * @returns {number|null} - Average RTT or null if no samples
+     */
+    getLatency() {
+        if (this.rttSamples.length === 0) return null;
+        const sum = this.rttSamples.reduce((a, b) => a + b, 0);
+        return Math.round(sum / this.rttSamples.length);
     }
 }
 

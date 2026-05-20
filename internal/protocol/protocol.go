@@ -13,6 +13,7 @@ const (
 	MessageTypeJoinRoom    MessageType = "join_room"
 	MessageTypePlayerInput MessageType = "player_input"
 	MessageTypeLeaveRoom   MessageType = "leave_room"
+	MessageTypePlayAgain   MessageType = "play_again"
 
 	// Server messages
 	MessageTypeGameState      MessageType = "game_state"
@@ -21,7 +22,12 @@ const (
 	MessageTypeError          MessageType = "error"
 	MessageTypePlayerJoined   MessageType = "player_joined"
 	MessageTypePlayerLeft     MessageType = "player_left"
+	MessageTypePlayerDied     MessageType = "player_died"
 	MessageTypeAck            MessageType = "ack"
+
+	// Ping/Pong for latency measurement
+	MessageTypePing MessageType = "ping"
+	MessageTypePong MessageType = "pong"
 )
 
 // Message is the base wrapper for all WebSocket messages.
@@ -110,6 +116,22 @@ type GameEndMessage struct {
 type ErrorMessage struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+}
+
+// PingMessage is sent by client to measure latency.
+type PingMessage struct {
+	Timestamp int64 `json:"timestamp"`
+}
+
+// PlayerDiedMessage is sent to a player when their snake dies.
+type PlayerDiedMessage struct {
+	PlayerID string `json:"player_id"`
+	Reason   string `json:"reason"` // "wall", "collision", "self"
+}
+
+// PlayAgainRequest is sent by client to respawn or quit after death.
+type PlayAgainRequest struct {
+	PlayAgain bool `json:"play_again"` // true = respawn, false = leave room
 }
 
 // AckMessage acknowledges receipt of a message.

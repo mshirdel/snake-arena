@@ -61,6 +61,17 @@
             </div>
             <div class="canvas-container">
                 <canvas id="game-canvas"></canvas>
+                <div id="death-overlay" class="death-overlay" style="display: none;">
+                    <div class="death-overlay-content">
+                        <h2>You Died!</h2>
+                        <p id="death-reason"></p>
+                        <p>Play again?</p>
+                        <div class="death-overlay-buttons">
+                            <button id="play-again-yes" class="btn btn-primary">Yes</button>
+                            <button id="play-again-no" class="btn btn-secondary">No</button>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="game-controls">
                 <div class="direction-controls">

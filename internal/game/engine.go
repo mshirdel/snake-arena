@@ -9,9 +9,10 @@ import (
 
 // Engine handles all deterministic game logic.
 type Engine struct {
-	state  *models.GameState
-	config models.RoomConfig
-	rng    *rand.Rand
+	state      *models.GameState
+	config     models.RoomConfig
+	rng        *rand.Rand
+	newlyDead  map[string]string // playerID -> death reason ("wall", "collision", "self")
 }
 
 // NewEngine creates a new game engine.
@@ -28,6 +29,7 @@ func NewEngine(roomID string, config models.RoomConfig, seed int64) *Engine {
 			Tick:     0,
 			GameOver: false,
 		},
+		newlyDead: make(map[string]string),
 	}
 	return e
 }
@@ -91,15 +93,34 @@ func (e *Engine) SetPlayerDirection(playerID string, dir models.Direction) error
 	return nil
 }
 
+// GetNewlyDeadPlayers returns players who died this tick with their death reason.
+func (e *Engine) GetNewlyDeadPlayers() map[string]string {
+	return e.newlyDead
+}
+
+// RespawnPlayer resets a dead player's snake to a fresh state.
+func (e *Engine) RespawnPlayer(playerID string) error {
+	snake, exists := e.state.Snakes[playerID]
+	if !exists {
+		return fmt.Errorf("player not found")
+	}
+	if !snake.Dead {
+		return fmt.Errorf("player is not dead")
+	}
+	e.respawnSnake(playerID, snake)
+	return nil
+}
+
 // Tick processes one game tick. Critical order:
-// 1. Move snakes
+// 1. Move snakes (skip dead)
 // 2. Check wall collisions
 // 3. Check snake-to-snake collisions
 // 4. Check self collisions
 // 5. Check food consumption
 // 6. Grow snakes
-// 7. Cleanup dead snakes
+// 7. Mark newly dead snakes
 // 8. Spawn food if needed
+
 func (e *Engine) Tick(directions map[string]models.Direction) {
 	if e.state.GameOver {
 		return
@@ -107,8 +128,14 @@ func (e *Engine) Tick(directions map[string]models.Direction) {
 
 	e.state.Tick++
 
-	// 1. Resolve directions and move snakes
+	// Clear newly dead tracking
+	e.newlyDead = make(map[string]string)
+
+	// 1. Resolve directions and move snakes (skip dead)
 	for playerID, snake := range e.state.Snakes {
+		if snake.Dead {
+			continue
+		}
 		dir := snake.Direction // default: keep moving forward
 
 		if queued, ok := directions[playerID]; ok && queued != models.DirectionNone {
@@ -122,55 +149,59 @@ func (e *Engine) Tick(directions map[string]models.Direction) {
 		e.moveSnake(snake, dir)
 	}
 
-	// Mark dead snakes
-	dead := make(map[string]bool)
+	// Mark newly dead snakes
+	dead := make(map[string]string) // playerID -> reason
 
-	// 2. Check wall collisions
+	// 2. Check wall collisions (skip already dead)
 	for playerID, snake := range e.state.Snakes {
+		if snake.Dead {
+			continue
+		}
 		if e.isOutOfBounds(snake.Head) {
-			dead[playerID] = true
+			dead[playerID] = "wall"
 		}
 	}
 
-	// 3. Check snake-to-snake collisions (head vs body)
+	// 3. Check snake-to-snake collisions (skip already dead)
 	for playerID, snake := range e.state.Snakes {
-		if dead[playerID] {
+		if snake.Dead || dead[playerID] != "" {
 			continue
 		}
 		for otherID, other := range e.state.Snakes {
-			if playerID == otherID {
+			if playerID == otherID || other.Dead {
 				continue
 			}
-			// Check if head collides with other's body
+			// Check if head collides with other's head (both die)
 			if e.positionEquals(snake.Head, other.Head) {
-				dead[playerID] = true
-				dead[otherID] = true
+				dead[playerID] = "collision"
+				dead[otherID] = "collision"
 			}
+			// Check if head collides with other's body
 			for _, segment := range other.Body {
 				if e.positionEquals(snake.Head, segment) {
-					dead[playerID] = true
+					dead[playerID] = "collision"
 				}
 			}
 		}
 	}
 
-	// 4. Check self collisions
+	// 4. Check self collisions (skip already dead)
 	for playerID, snake := range e.state.Snakes {
-		if dead[playerID] {
+		if snake.Dead || dead[playerID] != "" {
 			continue
 		}
 		for _, segment := range snake.Body {
 			if e.positionEquals(snake.Head, segment) {
-				dead[playerID] = true
+				dead[playerID] = "self"
 				break
 			}
 		}
 	}
 
-	// 5. Check food consumption and grow
+	// 5. Check food consumption and grow (skip dead)
 	foodEaten := make([]bool, len(e.state.Foods))
 	for playerID, snake := range e.state.Snakes {
-		if dead[playerID] {
+		if snake.Dead || dead[playerID] != "" {
 			continue
 		}
 		for i, food := range e.state.Foods {
@@ -198,22 +229,11 @@ func (e *Engine) Tick(directions map[string]models.Direction) {
 	}
 	e.state.Foods = newFoods
 
-	// 7. Cleanup dead snakes
-	for playerID := range dead {
-		delete(e.state.Snakes, playerID)
-	}
-
-	// Check game over condition
-	// Only end when all snakes are dead. Single-player and multiplayer
-	// both continue until the last snake dies from a collision.
-	alive := len(e.state.Snakes)
-	if alive == 0 {
-		e.state.GameOver = true
-		e.state.Winner = ""
-	} else if alive == 1 {
-		for playerID := range e.state.Snakes {
-			e.state.Winner = playerID
-		}
+	// 7. Mark newly dead snakes (don't delete them)
+	for playerID, reason := range dead {
+		e.state.Snakes[playerID].Dead = true
+		e.state.Snakes[playerID].DeadAt = e.state.Tick
+		e.newlyDead[playerID] = reason
 	}
 
 	// 8. Spawn food if needed
@@ -265,6 +285,64 @@ func (e *Engine) isOpposite(a, b models.Direction) bool {
 // positionEquals checks if two positions are the same.
 func (e *Engine) positionEquals(a, b models.Vector2D) bool {
 	return a.X == b.X && a.Y == b.Y
+}
+
+// respawnSnake resets a dead snake to a fresh state at a random position.
+func (e *Engine) respawnSnake(playerID string, snake *models.Snake) {
+	pos := e.findSafePosition()
+
+	snake.Head = pos
+	snake.Body = []models.Vector2D{
+		{X: pos.X - 1, Y: pos.Y},
+		{X: pos.X - 2, Y: pos.Y},
+	}
+	snake.Direction = models.DirectionRight
+	snake.Dead = false
+	snake.DeadAt = 0
+}
+
+// findSafePosition returns a random position not occupied by any snake or food.
+func (e *Engine) findSafePosition() models.Vector2D {
+	for attempts := 0; attempts < 100; attempts++ {
+		pos := models.Vector2D{
+			X: e.rng.Intn(e.config.Width),
+			Y: e.rng.Intn(e.config.Height),
+		}
+
+		occupied := false
+		for _, snake := range e.state.Snakes {
+			if e.positionEquals(pos, snake.Head) {
+				occupied = true
+				break
+			}
+			for _, segment := range snake.Body {
+				if e.positionEquals(pos, segment) {
+					occupied = true
+					break
+				}
+			}
+			if occupied {
+				break
+			}
+		}
+		if !occupied {
+			for _, food := range e.state.Foods {
+				if e.positionEquals(pos, food.Position) {
+					occupied = true
+					break
+				}
+			}
+		}
+
+		if !occupied {
+			return pos
+		}
+	}
+	// Fallback: return a random position even if occupied
+	return models.Vector2D{
+		X: e.rng.Intn(e.config.Width),
+		Y: e.rng.Intn(e.config.Height),
+	}
 }
 
 // spawnFood spawns food until the target count is reached.

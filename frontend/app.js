@@ -64,6 +64,10 @@ function setupUI() {
         });
     });
 
+    // Death overlay buttons
+    document.getElementById('play-again-yes').addEventListener('click', () => handlePlayAgainChoice(true));
+    document.getElementById('play-again-no').addEventListener('click', () => handlePlayAgainChoice(false));
+
     // Initialize renderer
     const canvas = document.getElementById('game-canvas');
     app.renderer = new GameRenderer(canvas);
@@ -100,6 +104,7 @@ function setupNetwork() {
     network.on(MessageType.Error, handleError);
     network.on(MessageType.PlayerJoined, handlePlayerJoined);
     network.on(MessageType.PlayerLeft, handlePlayerLeft);
+    network.on(MessageType.PlayerDied, handlePlayerDied);
     network.on(MessageType.Ack, handleAck);
 }
 
@@ -188,9 +193,18 @@ function handleDirectionInput(direction) {
  * Handle leave button
  */
 function handleLeave() {
+    hideDeathOverlay();
+
     if (app.roomId && app.playerId) {
-        const leaveMsg = createLeaveRoomMessage(app.roomId, app.playerId);
-        network.send(leaveMsg);
+        // If dead, use play_again: false to properly clean up
+        const isDead = document.getElementById('death-overlay').style.display === 'flex';
+        if (isDead) {
+            const msg = createPlayAgainMessage(false);
+            network.send(msg);
+        } else {
+            const leaveMsg = createLeaveRoomMessage(app.roomId, app.playerId);
+            network.send(leaveMsg);
+        }
     }
 
     network.disconnect();
@@ -227,9 +241,20 @@ function handleGameState(message) {
     const state = message.payload;
     game.updateState(state);
 
+    // Update latency display
+    if (app.renderer) {
+        app.renderer.latency = network.getLatency();
+    }
+
     // Start game screen if we haven't already
     if (app.currentScreen === 'lobby' && !game.state.gameOver) {
         startGameScreen();
+    }
+
+    // Hide death overlay if player respawned (alive again)
+    const mySnake = state.snakes && state.snakes[app.playerId];
+    if (mySnake && mySnake.alive) {
+        hideDeathOverlay();
     }
 
     // Update UI
@@ -311,6 +336,54 @@ function handleAck(message) {
         app.roomId = payload.room_id;
         document.getElementById('current-room-id').textContent = app.roomId;
     }
+}
+
+/**
+ * Handle player died notification
+ */
+function handlePlayerDied(message) {
+    const payload = message.payload;
+    console.log('You died!', payload.reason);
+    showDeathOverlay(payload.reason);
+}
+
+/**
+ * Handle play again choice
+ * @param {boolean} playAgain - true to respawn, false to quit
+ */
+function handlePlayAgainChoice(playAgain) {
+    const msg = createPlayAgainMessage(playAgain);
+    network.send(msg);
+
+    if (!playAgain) {
+        hideDeathOverlay();
+        network.disconnect();
+        game.reset();
+        app.roomId = '';
+        showScreen('connect');
+    }
+}
+
+/**
+ * Show death overlay with reason
+ * @param {string} reason - Death reason ("wall", "collision", "self")
+ */
+function showDeathOverlay(reason) {
+    const reasonText = {
+        'wall': 'You hit a wall!',
+        'collision': 'You collided with another snake!',
+        'self': 'You bit yourself!'
+    };
+
+    document.getElementById('death-reason').textContent = reasonText[reason] || 'You died!';
+    document.getElementById('death-overlay').style.display = 'flex';
+}
+
+/**
+ * Hide death overlay
+ */
+function hideDeathOverlay() {
+    document.getElementById('death-overlay').style.display = 'none';
 }
 
 // ============ UI Updates ============

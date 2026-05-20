@@ -185,6 +185,11 @@ func handleClientConnection(conn *network.Connection, connHub *network.Hub, mm *
 				handlePlayerInput(conn, connHub, mm, &msg)
 			case protocol.MessageTypeLeaveRoom:
 				handleLeaveRoom(conn, connHub, mm, &msg)
+			case protocol.MessageTypePlayAgain:
+				handlePlayAgain(conn, connHub, mm, &msg)
+			case protocol.MessageTypePing:
+				pong, _ := protocol.NewMessage(protocol.MessageTypePong, msg.Payload)
+				conn.SendMessage(pong)
 			default:
 				errMsg, _ := protocol.NewMessage(protocol.MessageTypeError, protocol.ErrorMessage{
 					Code:    "unknown_message_type",
@@ -322,6 +327,42 @@ func handleLeaveRoom(conn *network.Connection, connHub *network.Hub, mm *matchma
 
 	conn.PlayerID = ""
 	conn.RoomID = ""
+}
+
+// handlePlayAgain processes a player's decision to respawn or quit after death.
+func handlePlayAgain(conn *network.Connection, connHub *network.Hub, mm *matchmaker.Matchmaker, msg *protocol.Message) {
+	if conn.PlayerID == "" || conn.RoomID == "" {
+		errMsg, _ := protocol.NewMessage(protocol.MessageTypeError, protocol.ErrorMessage{
+			Code:    "not_in_room",
+			Message: "player is not in a room",
+		})
+		conn.SendMessage(errMsg)
+		return
+	}
+
+	var req protocol.PlayAgainRequest
+	if err := msg.UnmarshalPayload(&req); err != nil {
+		errMsg, _ := protocol.NewMessage(protocol.MessageTypeError, protocol.ErrorMessage{
+			Code:    "invalid_payload",
+			Message: "failed to parse play again request",
+		})
+		conn.SendMessage(errMsg)
+		return
+	}
+
+	if err := mm.HandlePlayAgain(conn.PlayerID, conn.RoomID, req.PlayAgain); err != nil {
+		errMsg, _ := protocol.NewMessage(protocol.MessageTypeError, protocol.ErrorMessage{
+			Code:    "play_again_failed",
+			Message: err.Error(),
+		})
+		conn.SendMessage(errMsg)
+		return
+	}
+
+	if !req.PlayAgain {
+		conn.PlayerID = ""
+		conn.RoomID = ""
+	}
 }
 
 // generateConnID generates a unique connection ID.

@@ -20,6 +20,9 @@ class GameRenderer {
         this.lastFrameTime = 0;
         this.foodPulse = 0;
 
+        // Latency display
+        this.latency = null;
+
         // Resize handler
         this.resizeHandler = this.resize.bind(this);
         window.addEventListener('resize', this.resizeHandler);
@@ -307,6 +310,50 @@ class GameRenderer {
                 this.drawDeadSnake(snake);
             }
         });
+
+        // Draw latency overlay
+        this.drawLatency();
+    }
+
+    /**
+     * Draw latency indicator in top-right corner
+     */
+    drawLatency() {
+        if (this.latency === null) return;
+
+        const text = `${this.latency}ms`;
+        this.ctx.font = 'bold 12px monospace';
+        const metrics = this.ctx.measureText(text);
+        const pad = 6;
+
+        // Color by severity
+        let color;
+        if (this.latency < 50) color = '#22c55e';
+        else if (this.latency < 100) color = '#f59e0b';
+        else color = '#ef4444';
+
+        // Background pill
+        const x = this.canvas.width - metrics.width - pad * 3;
+        const y = pad;
+        const w = metrics.width + pad * 2;
+        const h = 20;
+
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        this.ctx.beginPath();
+        this.ctx.roundRect(x, y, w, h, 4);
+        this.ctx.fill();
+
+        // Ping bars icon (3 bars)
+        const barX = x + 5;
+        const barY = y + 14;
+        this.ctx.fillStyle = color;
+        [4, 7, 10].forEach((h, i) => {
+            this.ctx.fillRect(barX + i * 3, barY - h, 2, h);
+        });
+
+        // Text
+        this.ctx.fillStyle = color;
+        this.ctx.fillText(text, barX + 14, y + 15);
     }
 
     /**

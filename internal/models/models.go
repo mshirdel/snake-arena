@@ -17,6 +17,8 @@ type Snake struct {
 	Body      []Vector2D `json:"body"`
 	Color     string     `json:"color"`
 	Direction Direction  `json:"direction"`
+	Dead      bool       `json:"dead"`
+	DeadAt    uint64     `json:"-"` // tick when snake died, for respawn timing
 }
 
 // Food represents food on the board.
