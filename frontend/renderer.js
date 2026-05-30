@@ -34,7 +34,7 @@ class GameRenderer {
      */
     resize() {
         const container = this.canvas.parentElement;
-        const containerWidth = container.clientWidth - 20;
+        const containerWidth = container ? container.clientWidth - 20 : (this.canvas.width || 800);
         const containerHeight = Math.min(containerWidth * 0.75, window.innerHeight * 0.6);
 
         // Calculate cell size to fit grid
@@ -117,7 +117,7 @@ class GameRenderer {
      * @param {object} snake - Snake data
      */
     drawSnake(snake) {
-        const body = snake.body || [];
+        const body = this.getRenderableBody(snake);
         const color = snake.color || '#22c55e';
         const cellSize = this.cellSize;
 
@@ -163,28 +163,25 @@ class GameRenderer {
      * @param {number} headIndex - Index of head in body array
      */
     drawSnakeEyes(snake, headIndex) {
-        const body = snake.body || [];
+        const body = this.getRenderableBody(snake);
         if (body.length < 2) return;
 
         const head = body[0];
-        const neck = body[1];
         const cellSize = this.cellSize;
 
         const px = head.x * cellSize;
         const py = head.y * cellSize;
 
-        // Calculate direction
-        const dx = neck.x - head.x;
-        const dy = neck.y - head.y;
+        const direction = snake.direction || '';
 
         const eyeSize = 3;
         const eyeOffset = cellSize / 4;
 
         this.ctx.fillStyle = '#fff';
 
-        if (dx !== 0) {
+        if (direction === 'left' || direction === 'right') {
             // Horizontal movement
-            const eyeX = dx > 0 ? px + cellSize - eyeOffset : px + eyeOffset;
+            const eyeX = direction === 'right' ? px + cellSize - eyeOffset : px + eyeOffset;
             this.ctx.beginPath();
             this.ctx.arc(eyeX, py + cellSize / 3, eyeSize, 0, Math.PI * 2);
             this.ctx.fill();
@@ -193,7 +190,7 @@ class GameRenderer {
             this.ctx.fill();
         } else {
             // Vertical movement
-            const eyeY = dy > 0 ? py + cellSize - eyeOffset : py + eyeOffset;
+            const eyeY = direction === 'down' ? py + cellSize - eyeOffset : py + eyeOffset;
             this.ctx.beginPath();
             this.ctx.arc(px + cellSize / 3, eyeY, eyeSize, 0, Math.PI * 2);
             this.ctx.fill();
@@ -264,7 +261,7 @@ class GameRenderer {
      * @param {object} snake - Snake data
      */
     drawDeadSnake(snake) {
-        const body = snake.body || [];
+        const body = this.getRenderableBody(snake);
         const color = snake.color || '#22c55e';
         const cellSize = this.cellSize;
 
@@ -277,6 +274,17 @@ class GameRenderer {
             this.ctx.fillRect(px, py, cellSize, cellSize);
         });
         this.ctx.globalAlpha = 1;
+    }
+
+    /**
+     * Convert backend snake shape (head + body) into render order.
+     * @param {object} snake - Snake data
+     * @returns {array}
+     */
+    getRenderableBody(snake) {
+        const body = snake.body || [];
+        if (!snake.head) return body;
+        return [snake.head, ...body];
     }
 
     /**

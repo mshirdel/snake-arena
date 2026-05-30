@@ -183,9 +183,10 @@ async function handleJoinSubmit(e) {
  * Handle direction input from keyboard or buttons
  */
 function handleDirectionInput(direction) {
-    if (!game.queueInput(direction)) return;
+    const queuedInput = game.queueInput(direction);
+    if (!queuedInput) return;
 
-    const inputMsg = createPlayerInputMessage(direction);
+    const inputMsg = createPlayerInputMessage(queuedInput);
     network.send(inputMsg);
 }
 
@@ -402,6 +403,7 @@ function showScreen(name) {
     if (name === 'game') {
         app.renderer.startRenderLoop(() => game.state);
     } else {
+        game.stopPrediction();
         app.renderer.stopRenderLoop();
     }
 }
@@ -454,6 +456,7 @@ function updateLobbyPlayers() {
  */
 function startGameScreen() {
     document.getElementById('game-room-id').textContent = app.roomId;
+    game.startPrediction();
     showScreen('game');
     updateSnakeScores();
 }

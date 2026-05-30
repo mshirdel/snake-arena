@@ -210,7 +210,7 @@ func (ts *TestServer) handlePlayerInput(conn *network.Connection, msg *protocol.
 		dir = models.DirectionNone
 	}
 
-	ts.Matchmaker.HandlePlayerInput(conn.PlayerID, conn.RoomID, dir)
+	ts.Matchmaker.HandlePlayerInput(conn.PlayerID, conn.RoomID, dir, req.ClientTick, req.LastServerTick, req.InputSeq)
 }
 
 func (ts *TestServer) handleLeaveRoom(conn *network.Connection, msg *protocol.Message) {
@@ -267,10 +267,10 @@ func (ts *TestServer) Close() {
 
 // WebSocketClient is a test client for WebSocket connections
 type WebSocketClient struct {
-	conn   *websocket.Conn
-	URL    string
-	mu     sync.Mutex
-	inbox  []protocol.Message
+	conn  *websocket.Conn
+	URL   string
+	mu    sync.Mutex
+	inbox []protocol.Message
 }
 
 func NewWebSocketClient(t *testing.T, url string) (*WebSocketClient, error) {
@@ -330,9 +330,9 @@ func (c *WebSocketClient) Send(msg protocol.Message) error {
 func (c *WebSocketClient) JoinRoom(roomID, playerID, playerName, color string) error {
 	msg, _ := protocol.NewMessage(protocol.MessageTypeJoinRoom, protocol.JoinRoomRequest{
 		RoomID:     roomID,
-		PlayerID:  playerID,
+		PlayerID:   playerID,
 		PlayerName: playerName,
-		Color:     color,
+		Color:      color,
 	})
 	return c.Send(*msg)
 }
@@ -340,6 +340,16 @@ func (c *WebSocketClient) JoinRoom(roomID, playerID, playerName, color string) e
 func (c *WebSocketClient) SendInput(direction string) error {
 	msg, _ := protocol.NewMessage(protocol.MessageTypePlayerInput, protocol.PlayerInputMessage{
 		Direction: direction,
+	})
+	return c.Send(*msg)
+}
+
+func (c *WebSocketClient) SendInputWithMetadata(direction string, clientTick, lastServerTick, inputSeq uint64) error {
+	msg, _ := protocol.NewMessage(protocol.MessageTypePlayerInput, protocol.PlayerInputMessage{
+		Direction:      direction,
+		ClientTick:     clientTick,
+		LastServerTick: lastServerTick,
+		InputSeq:       inputSeq,
 	})
 	return c.Send(*msg)
 }

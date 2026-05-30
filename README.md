@@ -92,7 +92,7 @@ All messages are JSON with the shape `{type: string, payload: object}`.
 | Type | Payload | Description |
 |------|---------|-------------|
 | `join_room` | `{room_id, player_id, player_name, color}` | Join or create a room |
-| `player_input` | `{direction}` | Send direction: `up`, `down`, `left`, `right` |
+| `player_input` | `{direction, client_tick?, last_server_tick?, input_seq?}` | Send direction intent plus optional client prediction metadata |
 | `leave_room` | `{room_id, player_id}` | Leave the current room |
 | `play_again` | `{play_again: bool}` | `true` to respawn after death, `false` to quit |
 | `ping` | `{timestamp}` | Latency measurement |
@@ -101,7 +101,7 @@ All messages are JSON with the shape `{type: string, payload: object}`.
 
 | Type | Payload | Description |
 |------|---------|-------------|
-| `game_state` | Full state with snakes, food, tick, dimensions | Broadcast every tick |
+| `game_state` | Full state with snakes, food, tick, dimensions, input ack metadata | Broadcast every tick |
 | `player_joined` | `{player_id, player_name, color}` | A player joined the room |
 | `player_left` | `{player_id}` | A player left the room |
 | `player_died` | `{player_id, reason}` | Sent to the dead player only. Reason: `wall`, `collision`, `self` |
@@ -116,10 +116,20 @@ All messages are JSON with the shape `{type: string, payload: object}`.
 2. Client sends `join_room` (empty `room_id` for auto-assign)
 3. Server sends `ack` + broadcasts `player_joined` + `game_state`
 4. Client sends `player_input` each time the player presses a direction
-5. Server queues input, processes on next tick, broadcasts `game_state`
+5. Server queues input, processes on next tick, broadcasts authoritative `game_state` with `last_processed_input_tick` and `last_processed_input_seq`
 6. If the player dies, server sends `player_died` to that client only
 7. Client sends `play_again: true` to respawn or `play_again: false` to leave
 8. Client sends `leave_room` to disconnect gracefully
+
+### Client-side prediction contract
+
+The server remains authoritative, but clients may simulate ahead for smoother rendering:
+
+- Clients include `client_tick`, `last_server_tick`, and a monotonically increasing `input_seq` on `player_input`.
+- The room tick loop records the latest processed metadata per player.
+- `game_state` includes `server_time`, `last_processed_input_tick`, and `last_processed_input_seq`.
+- Browsers discard acknowledged local inputs, keep unacknowledged inputs pending, and reconcile to each authoritative snapshot.
+- Local prediction must never replace server death, collision, food, or respawn decisions.
 
 ## Configuration
 

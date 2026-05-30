@@ -92,7 +92,7 @@ func (m *Matchmaker) LeaveRoom(roomID, playerID string) error {
 }
 
 // HandlePlayerInput queues a player input in their room.
-func (m *Matchmaker) HandlePlayerInput(playerID, roomID string, direction models.Direction) error {
+func (m *Matchmaker) HandlePlayerInput(playerID, roomID string, direction models.Direction, clientTick, lastServerTick, inputSeq uint64) error {
 	m.mu.RLock()
 	r, ok := m.rooms[roomID]
 	m.mu.RUnlock()
@@ -101,7 +101,7 @@ func (m *Matchmaker) HandlePlayerInput(playerID, roomID string, direction models
 		return fmt.Errorf("room not found")
 	}
 
-	r.QueuePlayerInput(playerID, direction)
+	r.QueuePlayerInput(playerID, direction, clientTick, lastServerTick, inputSeq)
 	return nil
 }
 

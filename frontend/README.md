@@ -21,7 +21,7 @@ Make sure the backend server is running (`make run` from the project root) befor
 
 ## How It Works
 
-The frontend connects to the backend via WebSocket. The server is authoritative -- clients only send input intents (direction changes), and the server broadcasts game state back.
+The frontend connects to the backend via WebSocket. The server is authoritative, while the browser runs lightweight client-side prediction between snapshots so local movement feels responsive.
 
 ### Screens
 
@@ -34,6 +34,13 @@ The frontend connects to the backend via WebSocket. The server is authoritative 
 
 - Arrow keys or WASD to change direction
 - On-screen direction buttons for mobile
+
+### Prediction Model
+
+- Direction input is applied locally immediately and sent to the server with `client_tick`, `last_server_tick`, and `input_seq`.
+- The server keeps simulating the authoritative state and broadcasts `last_processed_input_tick` / `last_processed_input_seq`.
+- The browser drops acknowledged pending inputs and reconciles to each server snapshot.
+- Collision, food, death, and respawn outcomes are still confirmed by the server.
 
 ## Project Structure
 

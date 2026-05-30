@@ -301,7 +301,7 @@ func handlePlayerInput(conn *network.Connection, connHub *network.Hub, mm *match
 	}
 
 	// Queue input (room will process on next tick)
-	if err := mm.HandlePlayerInput(conn.PlayerID, conn.RoomID, dir); err != nil {
+	if err := mm.HandlePlayerInput(conn.PlayerID, conn.RoomID, dir, req.ClientTick, req.LastServerTick, req.InputSeq); err != nil {
 		errMsg, _ := protocol.NewMessage(protocol.MessageTypeError, protocol.ErrorMessage{
 			Code:    "input_failed",
 			Message: err.Error(),

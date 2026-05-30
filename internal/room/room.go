@@ -23,39 +23,46 @@ const (
 
 // Command represents a queued command to process during tick.
 type Command struct {
-	Type      CommandType
-	PlayerID  string
-	Direction models.Direction
-	ConnID    string
+	Type           CommandType
+	PlayerID       string
+	Direction      models.Direction
+	ConnID         string
+	ClientTick     uint64
+	LastServerTick uint64
+	InputSeq       uint64
 }
 
 // Room manages a single game room.
 type Room struct {
-	ID       string
-	config   models.RoomConfig
-	engine   *game.Engine
-	players  map[string]*models.Player
-	connHub  *network.Hub
-	mu       sync.RWMutex
-	cmdQueue []Command
-	ctx      context.Context
-	cancel   context.CancelFunc
-	tickChan <-chan time.Time
-	closed   bool
+	ID                     string
+	config                 models.RoomConfig
+	engine                 *game.Engine
+	players                map[string]*models.Player
+	connHub                *network.Hub
+	mu                     sync.RWMutex
+	cmdQueue               []Command
+	lastProcessedInputTick map[string]uint64
+	lastProcessedInputSeq  map[string]uint64
+	ctx                    context.Context
+	cancel                 context.CancelFunc
+	tickChan               <-chan time.Time
+	closed                 bool
 }
 
 // NewRoom creates a new game room.
 func NewRoom(id string, config models.RoomConfig, connHub *network.Hub) *Room {
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &Room{
-		ID:       id,
-		config:   config,
-		engine:   game.NewEngine(id, config, time.Now().UnixNano()),
-		players:  make(map[string]*models.Player),
-		connHub:  connHub,
-		ctx:      ctx,
-		cancel:   cancel,
-		cmdQueue: make([]Command, 0, 256),
+		ID:                     id,
+		config:                 config,
+		engine:                 game.NewEngine(id, config, time.Now().UnixNano()),
+		players:                make(map[string]*models.Player),
+		connHub:                connHub,
+		ctx:                    ctx,
+		cancel:                 cancel,
+		cmdQueue:               make([]Command, 0, 256),
+		lastProcessedInputTick: make(map[string]uint64),
+		lastProcessedInputSeq:  make(map[string]uint64),
 	}
 
 	// Start tick loop
@@ -87,6 +94,8 @@ func (r *Room) AddPlayer(playerID, connID, playerName, color string) error {
 		Name:     playerName,
 		JoinedAt: time.Now(),
 	}
+	r.lastProcessedInputTick[playerID] = 0
+	r.lastProcessedInputSeq[playerID] = 0
 
 	// Update connection with room assignment
 	if conn, ok := r.connHub.GetConnection(connID); ok {
@@ -118,6 +127,8 @@ func (r *Room) RemovePlayer(playerID string) {
 	}
 
 	delete(r.players, playerID)
+	delete(r.lastProcessedInputTick, playerID)
+	delete(r.lastProcessedInputSeq, playerID)
 	r.engine.RemovePlayer(playerID)
 
 	// Broadcast player left
@@ -130,14 +141,17 @@ func (r *Room) RemovePlayer(playerID string) {
 }
 
 // QueuePlayerInput queues a player input command.
-func (r *Room) QueuePlayerInput(playerID string, direction models.Direction) {
+func (r *Room) QueuePlayerInput(playerID string, direction models.Direction, clientTick, lastServerTick, inputSeq uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	r.cmdQueue = append(r.cmdQueue, Command{
-		Type:      CommandTypePlayerInput,
-		PlayerID:  playerID,
-		Direction: direction,
+		Type:           CommandTypePlayerInput,
+		PlayerID:       playerID,
+		Direction:      direction,
+		ClientTick:     clientTick,
+		LastServerTick: lastServerTick,
+		InputSeq:       inputSeq,
 	})
 }
 
@@ -166,15 +180,25 @@ func (r *Room) processTick() {
 
 	// Build direction map from queued commands
 	directions := make(map[string]models.Direction)
+	processedInputs := make(map[string]Command)
 	for _, cmd := range r.cmdQueue {
 		if cmd.Type == CommandTypePlayerInput {
 			directions[cmd.PlayerID] = cmd.Direction
+			processedInputs[cmd.PlayerID] = cmd
 		}
 	}
 	r.cmdQueue = r.cmdQueue[:0] // Clear queue
 
 	// Run game tick (deterministic, no external mutations)
 	r.engine.Tick(directions)
+
+	for playerID, cmd := range processedInputs {
+		r.lastProcessedInputTick[playerID] = cmd.ClientTick
+		r.lastProcessedInputSeq[playerID] = cmd.InputSeq
+		if cmd.ClientTick == 0 {
+			r.lastProcessedInputTick[playerID] = r.engine.GetState().Tick
+		}
+	}
 
 	// Broadcast updated game state
 	r.broadcastGameState()
@@ -236,15 +260,18 @@ func (r *Room) broadcastGameState() {
 	}
 
 	gameStateMsg := protocol.GameStateMessage{
-		RoomID:    r.ID,
-		Tick:      state.Tick,
-		GameOver:  state.GameOver,
-		Winner:    state.Winner,
-		Width:     state.Width,
-		Height:    state.Height,
-		Snakes:    snakes,
-		Foods:     foods,
-		Timestamp: time.Now().UnixMilli(),
+		RoomID:                 r.ID,
+		Tick:                   state.Tick,
+		GameOver:               state.GameOver,
+		Winner:                 state.Winner,
+		Width:                  state.Width,
+		Height:                 state.Height,
+		Snakes:                 snakes,
+		Foods:                  foods,
+		Timestamp:              time.Now().UnixMilli(),
+		ServerTime:             time.Now().UnixMilli(),
+		LastProcessedInputTick: copyTickMap(r.lastProcessedInputTick),
+		LastProcessedInputSeq:  copyTickMap(r.lastProcessedInputSeq),
 	}
 
 	msg, _ := protocol.NewMessage(protocol.MessageTypeGameState, gameStateMsg)
@@ -282,6 +309,8 @@ func (r *Room) HandlePlayAgain(playerID string, playAgain bool) {
 			return
 		}
 		delete(r.players, playerID)
+		delete(r.lastProcessedInputTick, playerID)
+		delete(r.lastProcessedInputSeq, playerID)
 		r.engine.RemovePlayer(playerID)
 
 		msg, _ := protocol.NewMessage(protocol.MessageTypePlayerLeft, map[string]string{
@@ -323,6 +352,14 @@ func convertVectors(vecs []models.Vector2D) []protocol.VectorData {
 	result := make([]protocol.VectorData, len(vecs))
 	for i, v := range vecs {
 		result[i] = protocol.VectorData{X: v.X, Y: v.Y}
+	}
+	return result
+}
+
+func copyTickMap(src map[string]uint64) map[string]uint64 {
+	result := make(map[string]uint64, len(src))
+	for playerID, tick := range src {
+		result[playerID] = tick
 	}
 	return result
 }
