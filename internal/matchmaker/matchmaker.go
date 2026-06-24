@@ -81,7 +81,7 @@ func (m *Matchmaker) LeaveRoom(roomID, playerID string) error {
 	r.RemovePlayer(playerID)
 
 	// Clean up empty rooms
-	if r.GetPlayerCount() == 0 {
+	if r.GetHumanPlayerCount() == 0 {
 		m.mu.Lock()
 		delete(m.rooms, roomID)
 		m.mu.Unlock()
@@ -118,7 +118,7 @@ func (m *Matchmaker) HandlePlayAgain(playerID, roomID string, playAgain bool) er
 	r.HandlePlayAgain(playerID, playAgain)
 
 	// Clean up empty rooms after player quit
-	if !playAgain && r.GetPlayerCount() == 0 {
+	if !playAgain && r.GetHumanPlayerCount() == 0 {
 		m.mu.Lock()
 		delete(m.rooms, roomID)
 		m.mu.Unlock()

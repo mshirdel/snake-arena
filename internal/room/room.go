@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mshirdel/snake/internal/bot"
 	"github.com/mshirdel/snake/internal/game"
 	"github.com/mshirdel/snake/internal/models"
 	"github.com/mshirdel/snake/internal/network"
@@ -43,6 +44,7 @@ type Room struct {
 	cmdQueue               []Command
 	lastProcessedInputTick map[string]uint64
 	lastProcessedInputSeq  map[string]uint64
+	bot                    *bot.SimpleBot
 	ctx                    context.Context
 	cancel                 context.CancelFunc
 	tickChan               <-chan time.Time
@@ -64,6 +66,7 @@ func NewRoom(id string, config models.RoomConfig, connHub *network.Hub) *Room {
 		lastProcessedInputTick: make(map[string]uint64),
 		lastProcessedInputSeq:  make(map[string]uint64),
 	}
+	r.addBot()
 
 	// Start tick loop
 	tickRate := time.Duration(1000/config.TickRate) * time.Millisecond
@@ -73,6 +76,26 @@ func NewRoom(id string, config models.RoomConfig, connHub *network.Hub) *Room {
 	go r.tickLoop(ticker)
 
 	return r
+}
+
+func (r *Room) addBot() {
+	if !r.config.EnableBot || r.config.BotID == "" {
+		return
+	}
+
+	if err := r.engine.AddPlayer(r.config.BotID, r.config.BotColor); err != nil {
+		return
+	}
+
+	r.players[r.config.BotID] = &models.Player{
+		ID:       r.config.BotID,
+		RoomID:   r.ID,
+		Name:     r.config.BotName,
+		JoinedAt: time.Now(),
+	}
+	r.lastProcessedInputTick[r.config.BotID] = 0
+	r.lastProcessedInputSeq[r.config.BotID] = 0
+	r.bot = &bot.SimpleBot{PlayerID: r.config.BotID}
 }
 
 // AddPlayer adds a player to the room.
@@ -188,6 +211,8 @@ func (r *Room) processTick() {
 		}
 	}
 	r.cmdQueue = r.cmdQueue[:0] // Clear queue
+	r.addBotDirection(directions)
+	r.respawnBotIfReady()
 
 	// Run game tick (deterministic, no external mutations)
 	r.engine.Tick(directions)
@@ -221,6 +246,34 @@ func (r *Room) processTick() {
 		})
 		r.connHub.BroadcastToRoom(r.ID, endMsg)
 	}
+}
+
+func (r *Room) addBotDirection(directions map[string]models.Direction) {
+	if r.bot == nil {
+		return
+	}
+	directions[r.bot.PlayerID] = r.bot.NextDirection(r.engine.GetState())
+}
+
+func (r *Room) respawnBotIfReady() {
+	if r.bot == nil {
+		return
+	}
+
+	snake, ok := r.engine.GetState().Snakes[r.bot.PlayerID]
+	if !ok || !snake.Dead {
+		return
+	}
+
+	delay := r.config.BotRespawnDelayTicks
+	if delay == 0 {
+		delay = 1
+	}
+	if r.engine.GetState().Tick-snake.DeadAt < delay {
+		return
+	}
+
+	_ = r.engine.RespawnPlayer(r.bot.PlayerID)
 }
 
 // broadcastGameState sends the current game state to all clients in the room.
@@ -283,6 +336,21 @@ func (r *Room) GetPlayerCount() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return len(r.players)
+}
+
+// GetHumanPlayerCount returns the number of non-bot players in the room.
+func (r *Room) GetHumanPlayerCount() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	count := 0
+	for playerID := range r.players {
+		if r.bot != nil && playerID == r.bot.PlayerID {
+			continue
+		}
+		count++
+	}
+	return count
 }
 
 // GetState returns the current game state.
