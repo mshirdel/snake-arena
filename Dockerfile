@@ -16,4 +16,6 @@ COPY --from=builder /snake /usr/local/bin/snake
 
 EXPOSE 8080
 
-ENTRYPOINT ["snake", "serve"]
+ENTRYPOINT ["/usr/local/bin/snake"]
+
+CMD ["serve"]

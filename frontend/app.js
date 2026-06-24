@@ -11,7 +11,7 @@ const app = {
     selectedColor: '#22c55e',
     isConnected: false,
     renderer: null,
-    wsServerUrl: 'ws://localhost:8080/ws'
+    wsServerUrl: ''
 };
 
 // DOM Elements
@@ -522,8 +522,8 @@ function generateId() {
  * Get server URLs based on current location
  */
 function updateServerUrls() {
-    const host = window.location.hostname || 'localhost';
-    app.wsServerUrl = `ws://${host}:8080/ws`;
+    const isLocal = ['localhost', '127.0.0.1', ''].includes(window.location.hostname);
+    app.wsServerUrl = isLocal ? 'ws://localhost:8080/ws' : 'wss://snake.liara.run/ws';
 }
 
 // Initialize on DOM ready
