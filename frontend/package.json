@@ -4,6 +4,7 @@
   "description": "E2E tests for Snake frontend",
   "scripts": {
     "start": "http-server . -p 9000 -c-1",
+    "simulate": "node simulate-cli.js",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",

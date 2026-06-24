@@ -19,6 +19,35 @@ npm start
 
 Make sure the backend server is running (`make run` from the project root) before opening the game.
 
+## CLI Simulation
+
+You can test the game from the client side without opening a browser by running the Node.js simulator. It connects players to the backend WebSocket, sends direction inputs, respawns after deaths, and leaves the room when the configured duration ends.
+
+```bash
+# Run 4 simulated players for 2 minutes
+npm run simulate -- --players 4 --duration 120
+
+# Join a specific room for 30 seconds
+npm run simulate -- --room-id test-room --players 2 --duration 30
+
+npm run simulate -- --players 2 --duration 30 --url ws://localhost:8080/ws
+npm run simulate -- --room-id test-room --players 2 --duration 60 --verbose
+```
+
+Options:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--url` | `ws://localhost:8080/ws` | Backend WebSocket URL |
+| `--players` | `2` | Number of concurrent simulated players |
+| `--duration` | `120` | Simulation duration in seconds |
+| `--room-id` | empty | Room to join. Empty means the first bot creates a room and others join it |
+| `--input-interval` | `150` | Milliseconds between direction inputs per player |
+| `--name-prefix` | `cli-bot` | Prefix for simulated player names |
+| `--verbose` | off | Log deaths and server errors |
+
+The backend still needs to be running before you start the simulator.
+
 ## How It Works
 
 The frontend connects to the backend via WebSocket. The server is authoritative, while the browser runs lightweight client-side prediction between snapshots so local movement feels responsive.
@@ -52,6 +81,7 @@ frontend/
   network.js          WebSocket connection management
   protocol.js         Message type definitions (shared with backend)
   renderer.js         Canvas rendering
+  simulate-cli.js     Node.js CLI client simulator
   styles.css          All styles
   e2e/                Playwright E2E tests
   package.json
