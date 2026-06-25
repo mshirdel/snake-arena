@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -29,6 +30,18 @@ var (
 		RunE:  runServe,
 	}
 )
+
+const (
+	adminUsername = "admin"
+	adminPassword = "admin123"
+)
+
+type adminStats struct {
+	WebSocketConnections int `json:"websocket_connections"`
+	RoomsWithPlayers     int `json:"rooms_with_players"`
+	OnlineUsers          int `json:"online_users"`
+	TotalPlayedUsers     int `json:"total_played_users"`
+}
 
 func init() {
 	serveCmd.Flags().StringVarP(&configPath, "config", "c", "", "Path to config file (default: config.yaml)")
@@ -64,6 +77,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	e.GET("/rooms", handleListRooms(mm))
 	e.POST("/rooms", handleCreateRoom(mm))
 	e.GET("/ws", handleWebSocket(connHub, mm))
+	registerAdminRoutes(e, connHub, mm)
 
 	// Start server
 	addr := cfg.Server.Addr()
@@ -74,6 +88,40 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func registerAdminRoutes(e *echo.Echo, connHub *network.Hub, mm *matchmaker.Matchmaker) {
+	admin := e.Group("/admin")
+	admin.Use(middleware.BasicAuth(func(username, password string, c echo.Context) (bool, error) {
+		usernameOK := subtle.ConstantTimeCompare([]byte(username), []byte(adminUsername)) == 1
+		passwordOK := subtle.ConstantTimeCompare([]byte(password), []byte(adminPassword)) == 1
+		return usernameOK && passwordOK, nil
+	}))
+
+	admin.GET("", handleAdminPanel(connHub, mm))
+	admin.GET("/stats", handleAdminStats(connHub, mm))
+}
+
+func collectAdminStats(connHub *network.Hub, mm *matchmaker.Matchmaker) adminStats {
+	return adminStats{
+		WebSocketConnections: connHub.ConnectionCount(),
+		RoomsWithPlayers:     mm.GetPlayingRoomCount(),
+		OnlineUsers:          connHub.PlayingConnectionCount(),
+		TotalPlayedUsers:     mm.GetTotalPlayedUserCount(),
+	}
+}
+
+func handleAdminStats(connHub *network.Hub, mm *matchmaker.Matchmaker) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		return c.JSON(http.StatusOK, collectAdminStats(connHub, mm))
+	}
+}
+
+func handleAdminPanel(connHub *network.Hub, mm *matchmaker.Matchmaker) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		c.Response().Header().Set(echo.HeaderContentType, echo.MIMETextHTMLCharsetUTF8)
+		return adminPanelTemplate.Execute(c.Response().Writer, collectAdminStats(connHub, mm))
+	}
 }
 
 // handleHealth returns server health status.

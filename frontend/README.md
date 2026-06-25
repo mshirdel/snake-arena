@@ -21,11 +21,14 @@ Make sure the backend server is running (`make run` from the project root) befor
 
 ## CLI Simulation
 
-You can test the game from the client side without opening a browser by running the Node.js simulator. It connects players to the backend WebSocket, sends direction inputs, respawns after deaths, and leaves the room when the configured duration ends.
+You can test the game from the client side without opening a browser by running the Node.js simulator. It connects players to the backend WebSocket, sends direction inputs, respawns after deaths, and leaves the room when the configured duration ends. Auto-created simulations split players across rooms with no more than 4 players per room.
 
 ```bash
 # Run 4 simulated players for 2 minutes
 npm run simulate -- --players 4 --duration 120
+
+# Run 8 simulated players across 2 rooms
+npm run simulate -- --players 8 --duration 120
 
 # Join a specific room for 30 seconds
 npm run simulate -- --room-id test-room --players 2 --duration 30
@@ -41,7 +44,7 @@ Options:
 | `--url` | `ws://localhost:8080/ws` | Backend WebSocket URL |
 | `--players` | `2` | Number of concurrent simulated players |
 | `--duration` | `120` | Simulation duration in seconds |
-| `--room-id` | empty | Room to join. Empty means the first bot creates a room and others join it |
+| `--room-id` | empty | Existing room to join. Empty means the simulator auto-creates rooms with up to 4 players each |
 | `--input-interval` | `150` | Milliseconds between direction inputs per player |
 | `--name-prefix` | `cli-bot` | Prefix for simulated player names |
 | `--verbose` | off | Log deaths and server errors |

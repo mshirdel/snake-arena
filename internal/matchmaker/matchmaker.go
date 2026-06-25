@@ -12,19 +12,21 @@ import (
 
 // Matchmaker manages room creation, joining, and cleanup.
 type Matchmaker struct {
-	rooms   map[string]*room.Room
-	connHub *network.Hub
-	config  models.RoomConfig
-	mu      sync.RWMutex
-	roomID  uint32
+	rooms       map[string]*room.Room
+	playedUsers map[string]struct{}
+	connHub     *network.Hub
+	config      models.RoomConfig
+	mu          sync.RWMutex
+	roomID      uint32
 }
 
 // NewMatchmaker creates a new matchmaker.
 func NewMatchmaker(connHub *network.Hub, config models.RoomConfig) *Matchmaker {
 	return &Matchmaker{
-		rooms:   make(map[string]*room.Room),
-		connHub: connHub,
-		config:  config,
+		rooms:       make(map[string]*room.Room),
+		playedUsers: make(map[string]struct{}),
+		connHub:     connHub,
+		config:      config,
 	}
 }
 
@@ -65,7 +67,15 @@ func (m *Matchmaker) JoinRoom(roomID, playerID, connID, playerName, color string
 		return fmt.Errorf("room is full")
 	}
 
-	return r.AddPlayer(playerID, connID, playerName, color)
+	if err := r.AddPlayer(playerID, connID, playerName, color); err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	m.playedUsers[playerID] = struct{}{}
+	m.mu.Unlock()
+
+	return nil
 }
 
 // LeaveRoom removes a player from a room.
@@ -135,6 +145,27 @@ func (m *Matchmaker) GetRoomCount() int {
 	return len(m.rooms)
 }
 
+// GetPlayingRoomCount returns the number of rooms with at least one human player.
+func (m *Matchmaker) GetPlayingRoomCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	count := 0
+	for _, r := range m.rooms {
+		if r.GetHumanPlayerCount() > 0 {
+			count++
+		}
+	}
+	return count
+}
+
+// GetTotalPlayedUserCount returns the number of unique human players that joined a room.
+func (m *Matchmaker) GetTotalPlayedUserCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.playedUsers)
+}
+
 // ListRooms returns information about all rooms.
 func (m *Matchmaker) ListRooms() []map[string]interface{} {
 	m.mu.RLock()
@@ -163,6 +194,7 @@ func (m *Matchmaker) Shutdown() {
 		r.Close()
 	}
 	m.rooms = make(map[string]*room.Room)
+	m.playedUsers = make(map[string]struct{})
 }
 
 // FindOrCreateRoom finds an available room or creates a new one.

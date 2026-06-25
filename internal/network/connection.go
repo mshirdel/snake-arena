@@ -245,3 +245,17 @@ func (h *Hub) ConnectionCount() int {
 	defer h.mu.RUnlock()
 	return len(h.connections)
 }
+
+// PlayingConnectionCount returns active connections that have joined a room.
+func (h *Hub) PlayingConnectionCount() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	count := 0
+	for _, conn := range h.connections {
+		if conn.PlayerID != "" && conn.RoomID != "" && !conn.IsClosed() {
+			count++
+		}
+	}
+	return count
+}

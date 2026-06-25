@@ -28,6 +28,7 @@ const OPPOSITE = {
     right: 'left'
 };
 const COLORS = ['#22c55e', '#3b82f6', '#ef4444', '#f59e0b', '#a855f7', '#06b6d4'];
+const MAX_PLAYERS_PER_ROOM = 4;
 
 function parseArgs(argv) {
     const options = {
@@ -80,6 +81,9 @@ function parseArgs(argv) {
     if (!Number.isInteger(options.inputInterval) || options.inputInterval < 50) {
         throw new Error('--input-interval must be an integer >= 50 milliseconds');
     }
+    if (options.roomId && options.players > MAX_PLAYERS_PER_ROOM) {
+        throw new Error(`--room-id targets one existing room, so --players cannot exceed ${MAX_PLAYERS_PER_ROOM}`);
+    }
 
     return options;
 }
@@ -91,7 +95,7 @@ Options:
   --url <ws-url>              Backend WebSocket URL (default: ws://localhost:8080/ws)
   --players <count>           Number of concurrent players (default: 2)
   --duration <seconds>        Run duration in seconds (default: 120)
-  --room-id <room>            Room to join. Empty creates a room with the first bot.
+  --room-id <room>            Room to join. Empty auto-creates rooms, max 4 players each.
   --input-interval <ms>       Direction send interval (default: 150)
   --name-prefix <name>        Bot name prefix (default: cli-bot)
   --verbose                   Log every server error and death
@@ -99,6 +103,7 @@ Options:
 
 Examples:
   npm run simulate -- --players 4 --duration 120
+  npm run simulate -- --players 8 --duration 120
   node simulate-cli.js --room-id test-room --players 2 --duration 30
 `);
 }
@@ -336,24 +341,43 @@ function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function waitForRoomAssignment(bot, timeoutMs = 5000) {
+    const startedAt = Date.now();
+    while (!bot.roomId && Date.now() - startedAt < timeoutMs) {
+        await sleep(50);
+    }
+
+    if (!bot.roomId) {
+        throw new Error(`${bot.playerName} did not receive a room assignment within ${timeoutMs}ms`);
+    }
+}
+
 async function main() {
     const options = parseArgs(process.argv);
     const bots = [];
-    let sharedRoomId = options.roomId || '';
+    const roomIds = options.roomId ? [options.roomId] : [];
+    const roomCount = Math.ceil(options.players / MAX_PLAYERS_PER_ROOM);
 
     console.log(`Connecting ${options.players} player(s) to ${options.url}`);
-    console.log(`Duration: ${options.duration}s, room: ${sharedRoomId || '(auto)'}`);
+    console.log(`Duration: ${options.duration}s, rooms: ${options.roomId || `${roomCount} auto-created`}`);
 
     for (let i = 0; i < options.players; i++) {
-        const bot = new SnakeBot(i, options, () => sharedRoomId);
+        const roomIndex = Math.floor(i / MAX_PLAYERS_PER_ROOM);
+        const bot = new SnakeBot(i, options, () => roomIds[roomIndex] || '');
         await bot.connect();
         bots.push(bot);
 
-        await sleep(250);
-        if (!sharedRoomId && bot.roomId) {
-            sharedRoomId = bot.roomId;
-            console.log(`Created room: ${sharedRoomId}`);
+        if (!roomIds[roomIndex] && bot.roomId) {
+            roomIds[roomIndex] = bot.roomId;
+            console.log(`Created room ${roomIndex + 1}/${roomCount}: ${bot.roomId}`);
         }
+        if (!roomIds[roomIndex]) {
+            await waitForRoomAssignment(bot);
+            roomIds[roomIndex] = bot.roomId;
+            console.log(`Created room ${roomIndex + 1}/${roomCount}: ${bot.roomId}`);
+        }
+
+        await sleep(100);
     }
 
     const startedAt = Date.now();
