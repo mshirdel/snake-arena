@@ -145,6 +145,8 @@ func (ts *TestServer) handleMessage(conn *network.Connection, msg *protocol.Mess
 		ts.handlePlayerInput(conn, msg)
 	case protocol.MessageTypeLeaveRoom:
 		ts.handleLeaveRoom(conn, msg)
+	case protocol.MessageTypePlayAgain:
+		ts.handlePlayAgain(conn, msg)
 	default:
 		ts.sendError(conn, "unknown_message_type", "unsupported message type")
 	}
@@ -208,7 +210,7 @@ func (ts *TestServer) handlePlayerInput(conn *network.Connection, msg *protocol.
 		dir = models.DirectionNone
 	}
 
-	ts.Matchmaker.HandlePlayerInput(conn.PlayerID, conn.RoomID, dir)
+	ts.Matchmaker.HandlePlayerInput(conn.PlayerID, conn.RoomID, dir, req.ClientTick, req.LastServerTick, req.InputSeq)
 }
 
 func (ts *TestServer) handleLeaveRoom(conn *network.Connection, msg *protocol.Message) {
@@ -219,6 +221,26 @@ func (ts *TestServer) handleLeaveRoom(conn *network.Connection, msg *protocol.Me
 	ts.Matchmaker.LeaveRoom(conn.RoomID, conn.PlayerID)
 	conn.PlayerID = ""
 	conn.RoomID = ""
+}
+
+func (ts *TestServer) handlePlayAgain(conn *network.Connection, msg *protocol.Message) {
+	if conn.PlayerID == "" || conn.RoomID == "" {
+		ts.sendError(conn, "not_in_room", "player is not in a room")
+		return
+	}
+
+	var req protocol.PlayAgainRequest
+	if err := msg.UnmarshalPayload(&req); err != nil {
+		ts.sendError(conn, "invalid_payload", "failed to parse play again request")
+		return
+	}
+
+	ts.Matchmaker.HandlePlayAgain(conn.PlayerID, conn.RoomID, req.PlayAgain)
+
+	if !req.PlayAgain {
+		conn.PlayerID = ""
+		conn.RoomID = ""
+	}
 }
 
 func (ts *TestServer) sendError(conn *network.Connection, code, message string) {
@@ -245,10 +267,10 @@ func (ts *TestServer) Close() {
 
 // WebSocketClient is a test client for WebSocket connections
 type WebSocketClient struct {
-	conn   *websocket.Conn
-	URL    string
-	mu     sync.Mutex
-	inbox  []protocol.Message
+	conn  *websocket.Conn
+	URL   string
+	mu    sync.Mutex
+	inbox []protocol.Message
 }
 
 func NewWebSocketClient(t *testing.T, url string) (*WebSocketClient, error) {
@@ -308,9 +330,9 @@ func (c *WebSocketClient) Send(msg protocol.Message) error {
 func (c *WebSocketClient) JoinRoom(roomID, playerID, playerName, color string) error {
 	msg, _ := protocol.NewMessage(protocol.MessageTypeJoinRoom, protocol.JoinRoomRequest{
 		RoomID:     roomID,
-		PlayerID:  playerID,
+		PlayerID:   playerID,
 		PlayerName: playerName,
-		Color:     color,
+		Color:      color,
 	})
 	return c.Send(*msg)
 }
@@ -322,8 +344,25 @@ func (c *WebSocketClient) SendInput(direction string) error {
 	return c.Send(*msg)
 }
 
+func (c *WebSocketClient) SendInputWithMetadata(direction string, clientTick, lastServerTick, inputSeq uint64) error {
+	msg, _ := protocol.NewMessage(protocol.MessageTypePlayerInput, protocol.PlayerInputMessage{
+		Direction:      direction,
+		ClientTick:     clientTick,
+		LastServerTick: lastServerTick,
+		InputSeq:       inputSeq,
+	})
+	return c.Send(*msg)
+}
+
 func (c *WebSocketClient) LeaveRoom() error {
 	msg, _ := protocol.NewMessage(protocol.MessageTypeLeaveRoom, protocol.LeaveRoomRequest{})
+	return c.Send(*msg)
+}
+
+func (c *WebSocketClient) SendPlayAgain(playAgain bool) error {
+	msg, _ := protocol.NewMessage(protocol.MessageTypePlayAgain, protocol.PlayAgainRequest{
+		PlayAgain: playAgain,
+	})
 	return c.Send(*msg)
 }
 

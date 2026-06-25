@@ -207,6 +207,56 @@ func TestJoinRoomAndReceiveGameState(t *testing.T) {
 	}
 }
 
+// TestPlayerInputMetadataAcknowledged verifies prediction metadata is echoed in authoritative snapshots.
+func TestPlayerInputMetadataAcknowledged(t *testing.T) {
+	ts := NewTestServer(t)
+	defer ts.Close()
+
+	client, err := NewWebSocketClient(t, "ws://"+ts.Server.Listener.Addr().String()+"/ws")
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+	defer client.Close()
+
+	roomID := "test-room-input-meta-" + time.Now().Format("150405")
+	playerID := "player-1"
+
+	if err := client.JoinRoom(roomID, playerID, "TestPlayer", "#22c55e"); err != nil {
+		t.Fatalf("failed to send join message: %v", err)
+	}
+
+	// Drain initial join/game_state messages.
+	for i := 0; i < 5; i++ {
+		_, _ = client.Receive(100 * time.Millisecond)
+	}
+
+	const clientTick uint64 = 7
+	const inputSeq uint64 = 3
+	if err := client.SendInputWithMetadata("down", clientTick, 0, inputSeq); err != nil {
+		t.Fatalf("failed to send input: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		msg, err := client.Receive(250 * time.Millisecond)
+		if err != nil || msg.Type != protocol.MessageTypeGameState {
+			continue
+		}
+
+		var state protocol.GameStateMessage
+		if err := msg.UnmarshalPayload(&state); err != nil {
+			t.Fatalf("failed to unmarshal game state: %v", err)
+		}
+
+		if state.LastProcessedInputTick[playerID] == clientTick &&
+			state.LastProcessedInputSeq[playerID] == inputSeq {
+			return
+		}
+	}
+
+	t.Fatalf("timed out waiting for input metadata acknowledgement")
+}
+
 // TestMultiplePlayersJoinSameRoom tests multiple players joining the same room
 func TestMultiplePlayersJoinSameRoom(t *testing.T) {
 	ts := NewTestServer(t)

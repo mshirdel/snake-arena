@@ -17,6 +17,8 @@ type Snake struct {
 	Body      []Vector2D `json:"body"`
 	Color     string     `json:"color"`
 	Direction Direction  `json:"direction"`
+	Dead      bool       `json:"dead"`
+	DeadAt    uint64     `json:"-"` // tick when snake died, for respawn timing
 }
 
 // Food represents food on the board.
@@ -26,15 +28,15 @@ type Food struct {
 
 // GameState represents the current state of a game room.
 type GameState struct {
-	RoomID    string           `json:"room_id"`
-	Width     int              `json:"width"`
-	Height    int              `json:"height"`
+	RoomID    string            `json:"room_id"`
+	Width     int               `json:"width"`
+	Height    int               `json:"height"`
 	Snakes    map[string]*Snake `json:"snakes"`
-	Foods     []Food           `json:"foods"`
-	Tick      uint64           `json:"tick"`
-	GameOver  bool             `json:"game_over"`
-	Winner    string           `json:"winner"` // empty if tie or still playing
-	Timestamp time.Time        `json:"timestamp"`
+	Foods     []Food            `json:"foods"`
+	Tick      uint64            `json:"tick"`
+	GameOver  bool              `json:"game_over"`
+	Winner    string            `json:"winner"` // empty if tie or still playing
+	Timestamp time.Time         `json:"timestamp"`
 }
 
 // Player represents a connected player.
@@ -69,20 +71,30 @@ type Room struct {
 
 // RoomConfig contains room configuration.
 type RoomConfig struct {
-	Width      int
-	Height     int
-	TickRate   int // ticks per second
-	MaxPlayers int
-	FoodCount  int
+	Width                int
+	Height               int
+	TickRate             int // ticks per second
+	MaxPlayers           int
+	FoodCount            int
+	EnableBot            bool
+	BotID                string
+	BotName              string
+	BotColor             string
+	BotRespawnDelayTicks uint64
 }
 
 // DefaultRoomConfig returns sensible defaults.
 func DefaultRoomConfig() RoomConfig {
 	return RoomConfig{
-		Width:      40,
-		Height:     30,
-		TickRate:   10,
-		MaxPlayers: 4,
-		FoodCount:  5,
+		Width:                40,
+		Height:               30,
+		TickRate:             10,
+		MaxPlayers:           4,
+		FoodCount:            5,
+		EnableBot:            true,
+		BotID:                "bot",
+		BotName:              "Snake Bot",
+		BotColor:             "#f59e0b",
+		BotRespawnDelayTicks: 10,
 	}
 }

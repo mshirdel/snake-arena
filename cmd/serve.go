@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -29,6 +30,18 @@ var (
 		RunE:  runServe,
 	}
 )
+
+const (
+	adminUsername = "admin"
+	adminPassword = "admin123"
+)
+
+type adminStats struct {
+	WebSocketConnections int `json:"websocket_connections"`
+	RoomsWithPlayers     int `json:"rooms_with_players"`
+	OnlineUsers          int `json:"online_users"`
+	TotalPlayedUsers     int `json:"total_played_users"`
+}
 
 func init() {
 	serveCmd.Flags().StringVarP(&configPath, "config", "c", "", "Path to config file (default: config.yaml)")
@@ -64,6 +77,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	e.GET("/rooms", handleListRooms(mm))
 	e.POST("/rooms", handleCreateRoom(mm))
 	e.GET("/ws", handleWebSocket(connHub, mm))
+	registerAdminRoutes(e, connHub, mm)
 
 	// Start server
 	addr := cfg.Server.Addr()
@@ -74,6 +88,40 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func registerAdminRoutes(e *echo.Echo, connHub *network.Hub, mm *matchmaker.Matchmaker) {
+	admin := e.Group("/admin")
+	admin.Use(middleware.BasicAuth(func(username, password string, c echo.Context) (bool, error) {
+		usernameOK := subtle.ConstantTimeCompare([]byte(username), []byte(adminUsername)) == 1
+		passwordOK := subtle.ConstantTimeCompare([]byte(password), []byte(adminPassword)) == 1
+		return usernameOK && passwordOK, nil
+	}))
+
+	admin.GET("", handleAdminPanel(connHub, mm))
+	admin.GET("/stats", handleAdminStats(connHub, mm))
+}
+
+func collectAdminStats(connHub *network.Hub, mm *matchmaker.Matchmaker) adminStats {
+	return adminStats{
+		WebSocketConnections: connHub.ConnectionCount(),
+		RoomsWithPlayers:     mm.GetPlayingRoomCount(),
+		OnlineUsers:          connHub.PlayingConnectionCount(),
+		TotalPlayedUsers:     mm.GetTotalPlayedUserCount(),
+	}
+}
+
+func handleAdminStats(connHub *network.Hub, mm *matchmaker.Matchmaker) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		return c.JSON(http.StatusOK, collectAdminStats(connHub, mm))
+	}
+}
+
+func handleAdminPanel(connHub *network.Hub, mm *matchmaker.Matchmaker) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		c.Response().Header().Set(echo.HeaderContentType, echo.MIMETextHTMLCharsetUTF8)
+		return adminPanelTemplate.Execute(c.Response().Writer, collectAdminStats(connHub, mm))
+	}
 }
 
 // handleHealth returns server health status.
@@ -185,6 +233,11 @@ func handleClientConnection(conn *network.Connection, connHub *network.Hub, mm *
 				handlePlayerInput(conn, connHub, mm, &msg)
 			case protocol.MessageTypeLeaveRoom:
 				handleLeaveRoom(conn, connHub, mm, &msg)
+			case protocol.MessageTypePlayAgain:
+				handlePlayAgain(conn, connHub, mm, &msg)
+			case protocol.MessageTypePing:
+				pong, _ := protocol.NewMessage(protocol.MessageTypePong, msg.Payload)
+				conn.SendMessage(pong)
 			default:
 				errMsg, _ := protocol.NewMessage(protocol.MessageTypeError, protocol.ErrorMessage{
 					Code:    "unknown_message_type",
@@ -296,7 +349,7 @@ func handlePlayerInput(conn *network.Connection, connHub *network.Hub, mm *match
 	}
 
 	// Queue input (room will process on next tick)
-	if err := mm.HandlePlayerInput(conn.PlayerID, conn.RoomID, dir); err != nil {
+	if err := mm.HandlePlayerInput(conn.PlayerID, conn.RoomID, dir, req.ClientTick, req.LastServerTick, req.InputSeq); err != nil {
 		errMsg, _ := protocol.NewMessage(protocol.MessageTypeError, protocol.ErrorMessage{
 			Code:    "input_failed",
 			Message: err.Error(),
@@ -322,6 +375,42 @@ func handleLeaveRoom(conn *network.Connection, connHub *network.Hub, mm *matchma
 
 	conn.PlayerID = ""
 	conn.RoomID = ""
+}
+
+// handlePlayAgain processes a player's decision to respawn or quit after death.
+func handlePlayAgain(conn *network.Connection, connHub *network.Hub, mm *matchmaker.Matchmaker, msg *protocol.Message) {
+	if conn.PlayerID == "" || conn.RoomID == "" {
+		errMsg, _ := protocol.NewMessage(protocol.MessageTypeError, protocol.ErrorMessage{
+			Code:    "not_in_room",
+			Message: "player is not in a room",
+		})
+		conn.SendMessage(errMsg)
+		return
+	}
+
+	var req protocol.PlayAgainRequest
+	if err := msg.UnmarshalPayload(&req); err != nil {
+		errMsg, _ := protocol.NewMessage(protocol.MessageTypeError, protocol.ErrorMessage{
+			Code:    "invalid_payload",
+			Message: "failed to parse play again request",
+		})
+		conn.SendMessage(errMsg)
+		return
+	}
+
+	if err := mm.HandlePlayAgain(conn.PlayerID, conn.RoomID, req.PlayAgain); err != nil {
+		errMsg, _ := protocol.NewMessage(protocol.MessageTypeError, protocol.ErrorMessage{
+			Code:    "play_again_failed",
+			Message: err.Error(),
+		})
+		conn.SendMessage(errMsg)
+		return
+	}
+
+	if !req.PlayAgain {
+		conn.PlayerID = ""
+		conn.RoomID = ""
+	}
 }
 
 // generateConnID generates a unique connection ID.

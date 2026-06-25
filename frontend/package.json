@@ -3,12 +3,15 @@
   "version": "1.0.0",
   "description": "E2E tests for Snake frontend",
   "scripts": {
+    "start": "http-server . -p 9000 -c-1",
+    "simulate": "node simulate-cli.js",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:debug": "playwright test --debug"
   },
   "devDependencies": {
-    "@playwright/test": "^1.42.0"
+    "@playwright/test": "^1.42.0",
+    "http-server": "^14.1.1"
   }
 }

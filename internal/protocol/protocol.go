@@ -13,15 +13,21 @@ const (
 	MessageTypeJoinRoom    MessageType = "join_room"
 	MessageTypePlayerInput MessageType = "player_input"
 	MessageTypeLeaveRoom   MessageType = "leave_room"
+	MessageTypePlayAgain   MessageType = "play_again"
 
 	// Server messages
-	MessageTypeGameState      MessageType = "game_state"
-	MessageTypeGameStart      MessageType = "game_start"
-	MessageTypeGameEnd        MessageType = "game_end"
-	MessageTypeError          MessageType = "error"
-	MessageTypePlayerJoined   MessageType = "player_joined"
-	MessageTypePlayerLeft     MessageType = "player_left"
-	MessageTypeAck            MessageType = "ack"
+	MessageTypeGameState    MessageType = "game_state"
+	MessageTypeGameStart    MessageType = "game_start"
+	MessageTypeGameEnd      MessageType = "game_end"
+	MessageTypeError        MessageType = "error"
+	MessageTypePlayerJoined MessageType = "player_joined"
+	MessageTypePlayerLeft   MessageType = "player_left"
+	MessageTypePlayerDied   MessageType = "player_died"
+	MessageTypeAck          MessageType = "ack"
+
+	// Ping/Pong for latency measurement
+	MessageTypePing MessageType = "ping"
+	MessageTypePong MessageType = "pong"
 )
 
 // Message is the base wrapper for all WebSocket messages.
@@ -32,15 +38,18 @@ type Message struct {
 
 // JoinRoomRequest is sent by client to join a room.
 type JoinRoomRequest struct {
-	RoomID    string `json:"room_id"`
-	PlayerID  string `json:"player_id"`
+	RoomID     string `json:"room_id"`
+	PlayerID   string `json:"player_id"`
 	PlayerName string `json:"player_name"`
-	Color     string `json:"color"`
+	Color      string `json:"color"`
 }
 
 // PlayerInputMessage is sent by client for each input.
 type PlayerInputMessage struct {
-	Direction string `json:"direction"` // "up", "down", "left", "right"
+	Direction      string `json:"direction"` // "up", "down", "left", "right"
+	ClientTick     uint64 `json:"client_tick,omitempty"`
+	LastServerTick uint64 `json:"last_server_tick,omitempty"`
+	InputSeq       uint64 `json:"input_seq,omitempty"`
 }
 
 // LeaveRoomRequest is sent when player leaves.
@@ -51,27 +60,30 @@ type LeaveRoomRequest struct {
 
 // GameStateMessage is the full game state sent to clients.
 type GameStateMessage struct {
-	RoomID    string                 `json:"room_id"`
-	Tick      uint64                 `json:"tick"`
-	GameOver  bool                   `json:"game_over"`
-	Winner    string                 `json:"winner"`
-	Width     int                    `json:"width"`
-	Height    int                    `json:"height"`
-	Snakes    map[string]SnakeData   `json:"snakes"`
-	Foods     []FoodData             `json:"foods"`
-	Timestamp int64                  `json:"timestamp"`
+	RoomID                 string               `json:"room_id"`
+	Tick                   uint64               `json:"tick"`
+	GameOver               bool                 `json:"game_over"`
+	Winner                 string               `json:"winner"`
+	Width                  int                  `json:"width"`
+	Height                 int                  `json:"height"`
+	Snakes                 map[string]SnakeData `json:"snakes"`
+	Foods                  []FoodData           `json:"foods"`
+	Timestamp              int64                `json:"timestamp"`
+	ServerTime             int64                `json:"server_time"`
+	LastProcessedInputTick map[string]uint64    `json:"last_processed_input_tick,omitempty"`
+	LastProcessedInputSeq  map[string]uint64    `json:"last_processed_input_seq,omitempty"`
 }
 
 // SnakeData for transmission.
 type SnakeData struct {
-	PlayerID   string      `json:"player_id"`
-	PlayerName string      `json:"player_name"`
-	Head       VectorData  `json:"head"`
+	PlayerID   string       `json:"player_id"`
+	PlayerName string       `json:"player_name"`
+	Head       VectorData   `json:"head"`
 	Body       []VectorData `json:"body"`
-	Color      string      `json:"color"`
-	Length     int         `json:"length"`
-	Alive      bool        `json:"alive"`
-	Direction  string      `json:"direction"`
+	Color      string       `json:"color"`
+	Length     int          `json:"length"`
+	Alive      bool         `json:"alive"`
+	Direction  string       `json:"direction"`
 }
 
 // FoodData for transmission.
@@ -87,8 +99,8 @@ type VectorData struct {
 
 // GameStartMessage notifies when game starts.
 type GameStartMessage struct {
-	RoomID  string `json:"room_id"`
-	Tick    uint64 `json:"tick"`
+	RoomID  string       `json:"room_id"`
+	Tick    uint64       `json:"tick"`
 	Players []PlayerInfo `json:"players"`
 }
 
@@ -101,8 +113,8 @@ type PlayerInfo struct {
 
 // GameEndMessage notifies when game ends.
 type GameEndMessage struct {
-	RoomID    string `json:"room_id"`
-	Winner    string `json:"winner"`
+	RoomID    string   `json:"room_id"`
+	Winner    string   `json:"winner"`
 	Survivors []string `json:"survivors"`
 }
 
@@ -110,6 +122,22 @@ type GameEndMessage struct {
 type ErrorMessage struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+}
+
+// PingMessage is sent by client to measure latency.
+type PingMessage struct {
+	Timestamp int64 `json:"timestamp"`
+}
+
+// PlayerDiedMessage is sent to a player when their snake dies.
+type PlayerDiedMessage struct {
+	PlayerID string `json:"player_id"`
+	Reason   string `json:"reason"` // "wall", "collision", "self"
+}
+
+// PlayAgainRequest is sent by client to respawn or quit after death.
+type PlayAgainRequest struct {
+	PlayAgain bool `json:"play_again"` // true = respawn, false = leave room
 }
 
 // AckMessage acknowledges receipt of a message.

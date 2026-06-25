@@ -8,6 +8,7 @@ const MessageType = {
     JoinRoom: 'join_room',
     PlayerInput: 'player_input',
     LeaveRoom: 'leave_room',
+    PlayAgain: 'play_again',
 
     // Server messages
     GameState: 'game_state',
@@ -16,7 +17,12 @@ const MessageType = {
     Error: 'error',
     PlayerJoined: 'player_joined',
     PlayerLeft: 'player_left',
-    Ack: 'ack'
+    PlayerDied: 'player_died',
+    Ack: 'ack',
+
+    // Ping/Pong for latency measurement
+    Ping: 'ping',
+    Pong: 'pong'
 };
 
 /**
@@ -51,12 +57,27 @@ function createJoinRoomMessage(roomId, playerId, playerName, color) {
 
 /**
  * Create a PlayerInput message
- * @param {string} direction - 'up', 'down', 'left', 'right'
+ * @param {string|object} direction - Direction string or queued input metadata
+ * @param {number} clientTick - Client prediction tick for this input
+ * @param {number} lastServerTick - Last authoritative server tick seen by the client
+ * @param {number} inputSeq - Client-local monotonically increasing input sequence
  * @returns {object} - PlayerInput message
  */
-function createPlayerInputMessage(direction) {
+function createPlayerInputMessage(direction, clientTick = 0, lastServerTick = 0, inputSeq = 0) {
+    if (direction && typeof direction === 'object') {
+        return createMessage(MessageType.PlayerInput, {
+            direction: direction.direction,
+            client_tick: direction.clientTick || 0,
+            last_server_tick: direction.lastServerTick || 0,
+            input_seq: direction.inputSeq || 0
+        });
+    }
+
     return createMessage(MessageType.PlayerInput, {
-        direction: direction
+        direction: direction,
+        client_tick: clientTick,
+        last_server_tick: lastServerTick,
+        input_seq: inputSeq
     });
 }
 
@@ -70,6 +91,17 @@ function createLeaveRoomMessage(roomId, playerId) {
     return createMessage(MessageType.LeaveRoom, {
         room_id: roomId,
         player_id: playerId
+    });
+}
+
+/**
+ * Create a PlayAgain message
+ * @param {boolean} playAgain - true to respawn, false to quit
+ * @returns {object} - PlayAgain message
+ */
+function createPlayAgainMessage(playAgain) {
+    return createMessage(MessageType.PlayAgain, {
+        play_again: playAgain
     });
 }
 

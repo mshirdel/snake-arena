@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mshirdel/snake/internal/bot"
 	"github.com/mshirdel/snake/internal/game"
 	"github.com/mshirdel/snake/internal/models"
 	"github.com/mshirdel/snake/internal/network"
@@ -23,40 +24,49 @@ const (
 
 // Command represents a queued command to process during tick.
 type Command struct {
-	Type      CommandType
-	PlayerID  string
-	Direction models.Direction
-	ConnID    string
+	Type           CommandType
+	PlayerID       string
+	Direction      models.Direction
+	ConnID         string
+	ClientTick     uint64
+	LastServerTick uint64
+	InputSeq       uint64
 }
 
 // Room manages a single game room.
 type Room struct {
-	ID       string
-	config   models.RoomConfig
-	engine   *game.Engine
-	players  map[string]*models.Player
-	connHub  *network.Hub
-	mu       sync.RWMutex
-	cmdQueue []Command
-	ctx      context.Context
-	cancel   context.CancelFunc
-	tickChan <-chan time.Time
-	closed   bool
+	ID                     string
+	config                 models.RoomConfig
+	engine                 *game.Engine
+	players                map[string]*models.Player
+	connHub                *network.Hub
+	mu                     sync.RWMutex
+	cmdQueue               []Command
+	lastProcessedInputTick map[string]uint64
+	lastProcessedInputSeq  map[string]uint64
+	bot                    *bot.SimpleBot
+	ctx                    context.Context
+	cancel                 context.CancelFunc
+	tickChan               <-chan time.Time
+	closed                 bool
 }
 
 // NewRoom creates a new game room.
 func NewRoom(id string, config models.RoomConfig, connHub *network.Hub) *Room {
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &Room{
-		ID:       id,
-		config:   config,
-		engine:   game.NewEngine(id, config, time.Now().UnixNano()),
-		players:  make(map[string]*models.Player),
-		connHub:  connHub,
-		ctx:      ctx,
-		cancel:   cancel,
-		cmdQueue: make([]Command, 0, 256),
+		ID:                     id,
+		config:                 config,
+		engine:                 game.NewEngine(id, config, time.Now().UnixNano()),
+		players:                make(map[string]*models.Player),
+		connHub:                connHub,
+		ctx:                    ctx,
+		cancel:                 cancel,
+		cmdQueue:               make([]Command, 0, 256),
+		lastProcessedInputTick: make(map[string]uint64),
+		lastProcessedInputSeq:  make(map[string]uint64),
 	}
+	r.addBot()
 
 	// Start tick loop
 	tickRate := time.Duration(1000/config.TickRate) * time.Millisecond
@@ -66,6 +76,26 @@ func NewRoom(id string, config models.RoomConfig, connHub *network.Hub) *Room {
 	go r.tickLoop(ticker)
 
 	return r
+}
+
+func (r *Room) addBot() {
+	if !r.config.EnableBot || r.config.BotID == "" {
+		return
+	}
+
+	if err := r.engine.AddPlayer(r.config.BotID, r.config.BotColor); err != nil {
+		return
+	}
+
+	r.players[r.config.BotID] = &models.Player{
+		ID:       r.config.BotID,
+		RoomID:   r.ID,
+		Name:     r.config.BotName,
+		JoinedAt: time.Now(),
+	}
+	r.lastProcessedInputTick[r.config.BotID] = 0
+	r.lastProcessedInputSeq[r.config.BotID] = 0
+	r.bot = &bot.SimpleBot{PlayerID: r.config.BotID}
 }
 
 // AddPlayer adds a player to the room.
@@ -87,6 +117,8 @@ func (r *Room) AddPlayer(playerID, connID, playerName, color string) error {
 		Name:     playerName,
 		JoinedAt: time.Now(),
 	}
+	r.lastProcessedInputTick[playerID] = 0
+	r.lastProcessedInputSeq[playerID] = 0
 
 	// Update connection with room assignment
 	if conn, ok := r.connHub.GetConnection(connID); ok {
@@ -118,6 +150,8 @@ func (r *Room) RemovePlayer(playerID string) {
 	}
 
 	delete(r.players, playerID)
+	delete(r.lastProcessedInputTick, playerID)
+	delete(r.lastProcessedInputSeq, playerID)
 	r.engine.RemovePlayer(playerID)
 
 	// Broadcast player left
@@ -130,14 +164,17 @@ func (r *Room) RemovePlayer(playerID string) {
 }
 
 // QueuePlayerInput queues a player input command.
-func (r *Room) QueuePlayerInput(playerID string, direction models.Direction) {
+func (r *Room) QueuePlayerInput(playerID string, direction models.Direction, clientTick, lastServerTick, inputSeq uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	r.cmdQueue = append(r.cmdQueue, Command{
-		Type:      CommandTypePlayerInput,
-		PlayerID:  playerID,
-		Direction: direction,
+		Type:           CommandTypePlayerInput,
+		PlayerID:       playerID,
+		Direction:      direction,
+		ClientTick:     clientTick,
+		LastServerTick: lastServerTick,
+		InputSeq:       inputSeq,
 	})
 }
 
@@ -166,18 +203,39 @@ func (r *Room) processTick() {
 
 	// Build direction map from queued commands
 	directions := make(map[string]models.Direction)
+	processedInputs := make(map[string]Command)
 	for _, cmd := range r.cmdQueue {
 		if cmd.Type == CommandTypePlayerInput {
 			directions[cmd.PlayerID] = cmd.Direction
+			processedInputs[cmd.PlayerID] = cmd
 		}
 	}
 	r.cmdQueue = r.cmdQueue[:0] // Clear queue
+	r.addBotDirection(directions)
+	r.respawnBotIfReady()
 
 	// Run game tick (deterministic, no external mutations)
 	r.engine.Tick(directions)
 
+	for playerID, cmd := range processedInputs {
+		r.lastProcessedInputTick[playerID] = cmd.ClientTick
+		r.lastProcessedInputSeq[playerID] = cmd.InputSeq
+		if cmd.ClientTick == 0 {
+			r.lastProcessedInputTick[playerID] = r.engine.GetState().Tick
+		}
+	}
+
 	// Broadcast updated game state
 	r.broadcastGameState()
+
+	// Notify newly dead players
+	newlyDead := r.engine.GetNewlyDeadPlayers()
+	for playerID, reason := range newlyDead {
+		r.sendToPlayer(playerID, protocol.MessageTypePlayerDied, protocol.PlayerDiedMessage{
+			PlayerID: playerID,
+			Reason:   reason,
+		})
+	}
 
 	// Check if game is over
 	state := r.engine.GetState()
@@ -188,6 +246,34 @@ func (r *Room) processTick() {
 		})
 		r.connHub.BroadcastToRoom(r.ID, endMsg)
 	}
+}
+
+func (r *Room) addBotDirection(directions map[string]models.Direction) {
+	if r.bot == nil {
+		return
+	}
+	directions[r.bot.PlayerID] = r.bot.NextDirection(r.engine.GetState())
+}
+
+func (r *Room) respawnBotIfReady() {
+	if r.bot == nil {
+		return
+	}
+
+	snake, ok := r.engine.GetState().Snakes[r.bot.PlayerID]
+	if !ok || !snake.Dead {
+		return
+	}
+
+	delay := r.config.BotRespawnDelayTicks
+	if delay == 0 {
+		delay = 1
+	}
+	if r.engine.GetState().Tick-snake.DeadAt < delay {
+		return
+	}
+
+	_ = r.engine.RespawnPlayer(r.bot.PlayerID)
 }
 
 // broadcastGameState sends the current game state to all clients in the room.
@@ -211,7 +297,7 @@ func (r *Room) broadcastGameState() {
 			Body:      convertVectors(snake.Body),
 			Color:     snake.Color,
 			Length:    len(snake.Body) + 1,
-			Alive:     true,
+			Alive:     !snake.Dead,
 			Direction: directionToString(snake.Direction),
 		}
 	}
@@ -227,15 +313,18 @@ func (r *Room) broadcastGameState() {
 	}
 
 	gameStateMsg := protocol.GameStateMessage{
-		RoomID:    r.ID,
-		Tick:      state.Tick,
-		GameOver:  state.GameOver,
-		Winner:    state.Winner,
-		Width:     state.Width,
-		Height:    state.Height,
-		Snakes:    snakes,
-		Foods:     foods,
-		Timestamp: time.Now().UnixMilli(),
+		RoomID:                 r.ID,
+		Tick:                   state.Tick,
+		GameOver:               state.GameOver,
+		Winner:                 state.Winner,
+		Width:                  state.Width,
+		Height:                 state.Height,
+		Snakes:                 snakes,
+		Foods:                  foods,
+		Timestamp:              time.Now().UnixMilli(),
+		ServerTime:             time.Now().UnixMilli(),
+		LastProcessedInputTick: copyTickMap(r.lastProcessedInputTick),
+		LastProcessedInputSeq:  copyTickMap(r.lastProcessedInputSeq),
 	}
 
 	msg, _ := protocol.NewMessage(protocol.MessageTypeGameState, gameStateMsg)
@@ -249,11 +338,66 @@ func (r *Room) GetPlayerCount() int {
 	return len(r.players)
 }
 
+// GetHumanPlayerCount returns the number of non-bot players in the room.
+func (r *Room) GetHumanPlayerCount() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	count := 0
+	for playerID := range r.players {
+		if r.bot != nil && playerID == r.bot.PlayerID {
+			continue
+		}
+		count++
+	}
+	return count
+}
+
 // GetState returns the current game state.
 func (r *Room) GetState() *models.GameState {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.engine.GetState()
+}
+
+// HandlePlayAgain processes a player's decision to respawn or quit after death.
+func (r *Room) HandlePlayAgain(playerID string, playAgain bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if playAgain {
+		if err := r.engine.RespawnPlayer(playerID); err != nil {
+			return
+		}
+		// Broadcast updated state so all clients see the respawn
+		r.broadcastGameState()
+	} else {
+		// Player chose to quit — remove them
+		if _, exists := r.players[playerID]; !exists {
+			return
+		}
+		delete(r.players, playerID)
+		delete(r.lastProcessedInputTick, playerID)
+		delete(r.lastProcessedInputSeq, playerID)
+		r.engine.RemovePlayer(playerID)
+
+		msg, _ := protocol.NewMessage(protocol.MessageTypePlayerLeft, map[string]string{
+			"player_id": playerID,
+		})
+		r.connHub.BroadcastToRoom(r.ID, msg)
+	}
+}
+
+// sendToPlayer sends a message to a specific player in the room.
+func (r *Room) sendToPlayer(playerID string, msgType protocol.MessageType, payload interface{}) {
+	conns := r.connHub.GetConnectionsInRoom(r.ID)
+	for _, conn := range conns {
+		if conn.PlayerID == playerID {
+			msg, _ := protocol.NewMessage(msgType, payload)
+			conn.SendMessage(msg)
+			return
+		}
+	}
 }
 
 // Close closes the room.
@@ -276,6 +420,14 @@ func convertVectors(vecs []models.Vector2D) []protocol.VectorData {
 	result := make([]protocol.VectorData, len(vecs))
 	for i, v := range vecs {
 		result[i] = protocol.VectorData{X: v.X, Y: v.Y}
+	}
+	return result
+}
+
+func copyTickMap(src map[string]uint64) map[string]uint64 {
+	result := make(map[string]uint64, len(src))
+	for playerID, tick := range src {
+		result[playerID] = tick
 	}
 	return result
 }

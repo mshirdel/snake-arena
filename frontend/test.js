@@ -31,6 +31,33 @@ function assertObjectEqual(actual, expected, message = '') {
     }
 }
 
+function createSnakeState(overrides = {}) {
+    return {
+        room_id: 'room1',
+        tick: 10,
+        game_over: false,
+        winner: '',
+        width: 40,
+        height: 30,
+        snakes: {
+            player1: {
+                player_id: 'player1',
+                player_name: 'Alice',
+                head: { x: 10, y: 10 },
+                body: [{ x: 9, y: 10 }, { x: 8, y: 10 }],
+                color: '#22c55e',
+                length: 3,
+                alive: true,
+                direction: 'right',
+                ...(overrides.snake || {})
+            }
+        },
+        foods: overrides.foods || [],
+        last_processed_input_tick: overrides.lastProcessedInputTick || {},
+        last_processed_input_seq: overrides.lastProcessedInputSeq || {}
+    };
+}
+
 async function runTests() {
     console.log('🧪 Running Frontend WebSocket Tests\n');
 
@@ -88,6 +115,21 @@ test('protocol.js - createPlayerInputMessage creates valid input message', () =>
     const msg = createPlayerInputMessage('up');
     assertEqual(msg.type, 'player_input');
     assertEqual(msg.payload.direction, 'up');
+});
+
+test('protocol.js - createPlayerInputMessage includes prediction metadata', () => {
+    const msg = createPlayerInputMessage({
+        direction: 'down',
+        clientTick: 12,
+        lastServerTick: 10,
+        inputSeq: 4
+    });
+
+    assertEqual(msg.type, 'player_input');
+    assertEqual(msg.payload.direction, 'down');
+    assertEqual(msg.payload.client_tick, 12);
+    assertEqual(msg.payload.last_server_tick, 10);
+    assertEqual(msg.payload.input_seq, 4);
 });
 
 test('protocol.js - createLeaveRoomMessage creates valid leave message', () => {
@@ -270,11 +312,68 @@ test('game.js - queueInput rejects invalid directions', () => {
 test('game.js - getQueuedInputs returns and clears queue', () => {
     game.reset();
     game.queueInput('up');
-    game.queueInput('down');
+    game.queueInput('left');
 
     const inputs = game.getQueuedInputs();
     assertEqual(inputs.length, 2);
     assertEqual(game.inputQueue.length, 0);
+});
+
+test('game.js - queueInput returns prediction metadata', () => {
+    game.reset();
+    game.init('player1', 'Alice', '#22c55e');
+    game.updateState(createSnakeState());
+
+    const input = game.queueInput('down');
+
+    assertEqual(input.direction, 'down');
+    assertEqual(input.lastServerTick, 10);
+    assertEqual(input.inputSeq, 1);
+    assertTrue(input.clientTick > 10);
+    assertEqual(game.pendingInputs.length, 1);
+});
+
+test('game.js - updateState drops acknowledged pending inputs', () => {
+    game.reset();
+    game.init('player1', 'Alice', '#22c55e');
+    game.updateState(createSnakeState());
+    game.queueInput('down');
+
+    game.updateState(createSnakeState({
+        lastProcessedInputSeq: { player1: 1 },
+        lastProcessedInputTick: { player1: 11 },
+        snake: {
+            head: { x: 10, y: 11 },
+            body: [{ x: 10, y: 10 }, { x: 9, y: 10 }],
+            direction: 'down'
+        }
+    }));
+
+    assertEqual(game.pendingInputs.length, 0);
+    assertEqual(game.state.snakes.player1.head.x, 10);
+    assertEqual(game.state.snakes.player1.head.y, 11);
+    assertEqual(game.lastInputDirection, 'down');
+});
+
+test('game.js - updateState replays unacknowledged pending input after server correction', () => {
+    game.reset();
+    game.init('player1', 'Alice', '#22c55e');
+    game.updateState(createSnakeState());
+    game.queueInput('down');
+
+    game.updateState(createSnakeState({
+        snake: {
+            head: { x: 10, y: 10 },
+            body: [{ x: 9, y: 10 }, { x: 8, y: 10 }],
+            direction: 'right'
+        }
+    }));
+
+    assertEqual(game.pendingInputs.length, 1);
+    assertEqual(game.state.tick, 11);
+    assertEqual(game.state.snakes.player1.head.x, 10);
+    assertEqual(game.state.snakes.player1.head.y, 11);
+    assertEqual(game.state.snakes.player1.direction, 'down');
 });
 
 test('game.js - isPlayerAlive returns correct status', () => {
@@ -373,7 +472,11 @@ test('network.js - getReadyState returns CLOSED when not connected', () => {
 // ============ Renderer Tests (Mock) ============
 
 test('renderer.js - GameRenderer initializes with default values', () => {
-    const canvas = { width: 800, height: 600, getContext: () => ({ scale: () => {} }) };
+    const container = document.createElement('div');
+    container.style.width = '800px';
+    document.body.appendChild(container);
+    const canvas = document.createElement('canvas');
+    container.appendChild(canvas);
     const renderer = new GameRenderer(canvas);
 
     assertTrue(renderer.backgroundColor === '#1a1a2e');
@@ -381,6 +484,9 @@ test('renderer.js - GameRenderer initializes with default values', () => {
     assertTrue(renderer.foodColor === '#f59e0b');
     assertTrue(renderer.gridWidth === 40);
     assertTrue(renderer.gridHeight === 30);
+
+    renderer.destroy();
+    container.remove();
 });
 
 // ============ Message Format Tests ============

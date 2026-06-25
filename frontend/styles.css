@@ -278,6 +278,7 @@ input[type="text"]::placeholder {
 }
 
 .canvas-container {
+    position: relative;
     background: #0f0f1a;
     padding: 10px;
     border-radius: 0 0 12px 12px;
@@ -288,6 +289,50 @@ input[type="text"]::placeholder {
     width: 100%;
     background: #1a1a2e;
     border-radius: 4px;
+}
+
+/* Death Overlay */
+.death-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.75);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 4px;
+    z-index: 10;
+}
+
+.death-overlay-content {
+    text-align: center;
+    padding: 30px;
+}
+
+.death-overlay-content h2 {
+    color: #ef4444;
+    font-size: 2rem;
+    margin-bottom: 10px;
+}
+
+.death-overlay-content p {
+    color: #aaa;
+    margin-bottom: 15px;
+    font-size: 1.1rem;
+}
+
+.death-overlay-buttons {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-top: 20px;
+}
+
+.death-overlay-buttons .btn {
+    width: 120px;
+    padding: 12px 24px;
 }
 
 .game-controls {
