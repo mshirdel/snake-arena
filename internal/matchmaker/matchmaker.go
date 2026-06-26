@@ -8,6 +8,7 @@ import (
 	"github.com/mshirdel/snake/internal/models"
 	"github.com/mshirdel/snake/internal/network"
 	"github.com/mshirdel/snake/internal/room"
+	"github.com/mshirdel/snake/internal/storage"
 )
 
 // Matchmaker manages room creation, joining, and cleanup.
@@ -15,17 +16,23 @@ type Matchmaker struct {
 	rooms       map[string]*room.Room
 	playedUsers map[string]struct{}
 	connHub     *network.Hub
+	highScores  *storage.HighScores
 	config      models.RoomConfig
 	mu          sync.RWMutex
 	roomID      uint32
 }
 
 // NewMatchmaker creates a new matchmaker.
-func NewMatchmaker(connHub *network.Hub, config models.RoomConfig) *Matchmaker {
+func NewMatchmaker(connHub *network.Hub, config models.RoomConfig, highScores ...*storage.HighScores) *Matchmaker {
+	var scoreStore *storage.HighScores
+	if len(highScores) > 0 {
+		scoreStore = highScores[0]
+	}
 	return &Matchmaker{
 		rooms:       make(map[string]*room.Room),
 		playedUsers: make(map[string]struct{}),
 		connHub:     connHub,
+		highScores:  scoreStore,
 		config:      config,
 	}
 }
@@ -39,7 +46,7 @@ func (m *Matchmaker) CreateRoom(roomID string) (*room.Room, error) {
 		return nil, fmt.Errorf("room already exists")
 	}
 
-	r := room.NewRoom(roomID, m.config, m.connHub)
+	r := room.NewRoom(roomID, m.config, m.connHub, m.highScores)
 	m.rooms[roomID] = r
 
 	return r, nil

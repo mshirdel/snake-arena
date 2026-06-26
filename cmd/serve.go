@@ -19,6 +19,7 @@ import (
 	"github.com/mshirdel/snake/internal/models"
 	"github.com/mshirdel/snake/internal/network"
 	"github.com/mshirdel/snake/internal/protocol"
+	"github.com/mshirdel/snake/internal/storage"
 )
 
 var (
@@ -70,12 +71,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	// Initialize network and matchmaker
 	connHub := network.NewHub()
-	mm := matchmaker.NewMatchmaker(connHub, models.DefaultRoomConfig())
+	highScores := storage.NewHighScores(10)
+	mm := matchmaker.NewMatchmaker(connHub, models.DefaultRoomConfig(), highScores)
 
 	// HTTP endpoints
 	e.GET("/health", handleHealth)
 	e.GET("/rooms", handleListRooms(mm))
 	e.POST("/rooms", handleCreateRoom(mm))
+	e.GET("/high-scores", handleHighScores(highScores))
 	e.GET("/ws", handleWebSocket(connHub, mm))
 	registerAdminRoutes(e, connHub, mm)
 
@@ -88,6 +91,16 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func handleHighScores(highScores *storage.HighScores) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		scores := highScores.List()
+		return c.JSON(http.StatusOK, map[string]interface{}{
+			"high_scores": scores,
+			"count":       len(scores),
+		})
+	}
 }
 
 func registerAdminRoutes(e *echo.Echo, connHub *network.Hub, mm *matchmaker.Matchmaker) {

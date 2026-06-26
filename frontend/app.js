@@ -11,7 +11,9 @@ const app = {
     selectedColor: '#22c55e',
     isConnected: false,
     renderer: null,
-    wsServerUrl: ''
+    wsServerUrl: '',
+    apiServerUrl: '',
+    highScoresTimer: null
 };
 
 // DOM Elements
@@ -29,6 +31,7 @@ function init() {
     setupUI();
     setupNetwork();
     setupInput();
+    startHighScoresPolling();
 }
 
 /**
@@ -486,6 +489,67 @@ function updateSnakeScores() {
 }
 
 /**
+ * Start polling the REST high-score endpoint.
+ */
+function startHighScoresPolling() {
+    loadHighScores();
+    app.highScoresTimer = setInterval(loadHighScores, 5000);
+}
+
+/**
+ * Fetch and render top high scores.
+ */
+async function loadHighScores() {
+    const status = document.getElementById('high-scores-status');
+
+    try {
+        const response = await fetch(`${app.apiServerUrl}/high-scores`, {
+            headers: { 'Accept': 'application/json' }
+        });
+        if (!response.ok) {
+            throw new Error(`High scores request failed: ${response.status}`);
+        }
+
+        const data = await response.json();
+        renderHighScores(data.high_scores || []);
+        status.textContent = 'Live';
+        status.classList.remove('error-state');
+    } catch (error) {
+        console.error('Failed to load high scores:', error);
+        status.textContent = 'Offline';
+        status.classList.add('error-state');
+    }
+}
+
+/**
+ * Render high scores in the right sidebar.
+ * @param {array} scores
+ */
+function renderHighScores(scores) {
+    const list = document.getElementById('high-scores-list');
+    const empty = document.getElementById('high-scores-empty');
+    const topScores = scores.slice(0, 10);
+
+    empty.style.display = topScores.length === 0 ? 'block' : 'none';
+    list.innerHTML = topScores.map((score, index) => {
+        const playerName = escapeHtml(score.player_name || score.player_id || 'Player');
+        const roomId = escapeHtml(score.room_id || '');
+        const scoreValue = Number.isFinite(score.score) ? score.score : 0;
+
+        return `
+            <li class="high-score-item">
+                <span class="high-score-rank">${index + 1}</span>
+                <span class="high-score-player">
+                    <span class="high-score-name">${playerName}</span>
+                    <span class="high-score-room">${roomId}</span>
+                </span>
+                <span class="high-score-value">${scoreValue}</span>
+            </li>
+        `;
+    }).join('');
+}
+
+/**
  * Show game over screen
  */
 function showGameOverScreen(message, data) {
@@ -519,11 +583,25 @@ function generateId() {
 }
 
 /**
+ * Escape text before rendering HTML strings.
+ */
+function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    })[char]);
+}
+
+/**
  * Get server URLs based on current location
  */
 function updateServerUrls() {
     const isLocal = ['localhost', '127.0.0.1', ''].includes(window.location.hostname);
     app.wsServerUrl = isLocal ? 'ws://localhost:8080/ws' : 'wss://snake.liara.run/ws';
+    app.apiServerUrl = isLocal ? 'http://localhost:8080' : 'https://snake.liara.run';
 }
 
 // Initialize on DOM ready
