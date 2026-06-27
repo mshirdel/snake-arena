@@ -19,9 +19,10 @@ type HighScore struct {
 
 // HighScores stores each player's top snake score in memory.
 type HighScores struct {
-	mu      sync.RWMutex
-	limit   int
-	entries []HighScore
+	mu       sync.RWMutex
+	limit    int
+	entries  []HighScore
+	byPlayer map[string]HighScore
 }
 
 // NewHighScores creates an in-memory high-score store.
@@ -30,8 +31,9 @@ func NewHighScores(limit int) *HighScores {
 		limit = defaultHighScoreLimit
 	}
 	return &HighScores{
-		limit:   limit,
-		entries: make([]HighScore, 0, limit),
+		limit:    limit,
+		entries:  make([]HighScore, 0, limit),
+		byPlayer: make(map[string]HighScore),
 	}
 }
 
@@ -47,23 +49,20 @@ func (h *HighScores) Add(score HighScore) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	for i := range h.entries {
-		if h.entries[i].PlayerID != score.PlayerID {
-			continue
-		}
-		if score.Score <= h.entries[i].Score {
-			return
-		}
-		h.entries[i] = score
-		h.sortAndTrim()
+	current, exists := h.byPlayer[score.PlayerID]
+	if exists && score.Score <= current.Score {
 		return
 	}
 
-	h.entries = append(h.entries, score)
-	h.sortAndTrim()
+	h.byPlayer[score.PlayerID] = score
+	h.rebuildLeaderboard()
 }
 
-func (h *HighScores) sortAndTrim() {
+func (h *HighScores) rebuildLeaderboard() {
+	h.entries = h.entries[:0]
+	for _, entry := range h.byPlayer {
+		h.entries = append(h.entries, entry)
+	}
 	sort.SliceStable(h.entries, func(i, j int) bool {
 		if h.entries[i].Score == h.entries[j].Score {
 			return h.entries[i].CreatedAt.Before(h.entries[j].CreatedAt)
@@ -83,4 +82,13 @@ func (h *HighScores) List() []HighScore {
 	result := make([]HighScore, len(h.entries))
 	copy(result, h.entries)
 	return result
+}
+
+// GetByPlayerID returns a player's stored high score.
+func (h *HighScores) GetByPlayerID(playerID string) (HighScore, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	entry, ok := h.byPlayer[playerID]
+	return entry, ok
 }

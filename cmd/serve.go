@@ -79,6 +79,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	e.GET("/rooms", handleListRooms(mm))
 	e.POST("/rooms", handleCreateRoom(mm))
 	e.GET("/high-scores", handleHighScores(highScores))
+	e.GET("/high-scores/:player_id", handlePlayerHighScore(highScores))
 	e.GET("/ws", handleWebSocket(connHub, mm))
 	registerAdminRoutes(e, connHub, mm)
 
@@ -99,6 +100,28 @@ func handleHighScores(highScores *storage.HighScores) echo.HandlerFunc {
 		return c.JSON(http.StatusOK, map[string]interface{}{
 			"high_scores": scores,
 			"count":       len(scores),
+		})
+	}
+}
+
+func handlePlayerHighScore(highScores *storage.HighScores) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		playerID := c.Param("player_id")
+		if playerID == "" {
+			return c.JSON(http.StatusBadRequest, map[string]string{
+				"error": "player_id is required",
+			})
+		}
+
+		score, ok := highScores.GetByPlayerID(playerID)
+		if !ok {
+			return c.JSON(http.StatusNotFound, map[string]string{
+				"error": "high score not found",
+			})
+		}
+
+		return c.JSON(http.StatusOK, map[string]interface{}{
+			"high_score": score,
 		})
 	}
 }

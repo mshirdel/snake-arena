@@ -405,6 +405,31 @@ input[type="text"]::placeholder {
     min-height: 280px;
 }
 
+.player-high-score {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px;
+    margin-bottom: 14px;
+    background: #1a202c;
+    border: 1px solid #2e3b5c;
+    border-radius: 6px;
+}
+
+.player-high-score-label {
+    color: #94a3b8;
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.player-high-score-value {
+    color: #4ade80;
+    font-size: 1.3rem;
+    font-weight: 900;
+}
+
 .high-scores-header {
     display: flex;
     justify-content: space-between;

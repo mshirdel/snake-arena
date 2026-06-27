@@ -77,3 +77,48 @@ func TestHighScoresKeepsOneBestScorePerPlayer(t *testing.T) {
 		t.Fatalf("expected updated player name, got %s", got[0].PlayerName)
 	}
 }
+
+func TestHighScoresGetsScoreByPlayerID(t *testing.T) {
+	scores := NewHighScores(10)
+	scores.Add(HighScore{
+		PlayerID:   "player-1",
+		PlayerName: "Alice",
+		RoomID:     "room-1",
+		Score:      8,
+	})
+
+	got, ok := scores.GetByPlayerID("player-1")
+	if !ok {
+		t.Fatal("expected score for player-1")
+	}
+	if got.Score != 8 {
+		t.Fatalf("expected score 8, got %d", got.Score)
+	}
+
+	if _, ok := scores.GetByPlayerID("missing"); ok {
+		t.Fatal("expected no score for missing player")
+	}
+}
+
+func TestHighScoresKeepsPlayerScoreOutsideLeaderboard(t *testing.T) {
+	scores := NewHighScores(1)
+
+	scores.Add(HighScore{PlayerID: "leader", Score: 20})
+	scores.Add(HighScore{PlayerID: "player-1", Score: 5})
+
+	list := scores.List()
+	if len(list) != 1 {
+		t.Fatalf("expected leaderboard to keep 1 score, got %d", len(list))
+	}
+	if list[0].PlayerID != "leader" {
+		t.Fatalf("expected leader on leaderboard, got %s", list[0].PlayerID)
+	}
+
+	got, ok := scores.GetByPlayerID("player-1")
+	if !ok {
+		t.Fatal("expected player-1 score to remain available")
+	}
+	if got.Score != 5 {
+		t.Fatalf("expected player-1 score 5, got %d", got.Score)
+	}
+}
