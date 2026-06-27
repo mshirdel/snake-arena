@@ -11,6 +11,7 @@ import (
 	"github.com/mshirdel/snake/internal/models"
 	"github.com/mshirdel/snake/internal/network"
 	"github.com/mshirdel/snake/internal/protocol"
+	"github.com/mshirdel/snake/internal/storage"
 )
 
 // CommandType represents the type of command.
@@ -44,6 +45,8 @@ type Room struct {
 	cmdQueue               []Command
 	lastProcessedInputTick map[string]uint64
 	lastProcessedInputSeq  map[string]uint64
+	recordedDeathTick      map[string]uint64
+	highScores             *storage.HighScores
 	bot                    *bot.SimpleBot
 	ctx                    context.Context
 	cancel                 context.CancelFunc
@@ -52,7 +55,7 @@ type Room struct {
 }
 
 // NewRoom creates a new game room.
-func NewRoom(id string, config models.RoomConfig, connHub *network.Hub) *Room {
+func NewRoom(id string, config models.RoomConfig, connHub *network.Hub, highScores *storage.HighScores) *Room {
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &Room{
 		ID:                     id,
@@ -65,6 +68,8 @@ func NewRoom(id string, config models.RoomConfig, connHub *network.Hub) *Room {
 		cmdQueue:               make([]Command, 0, 256),
 		lastProcessedInputTick: make(map[string]uint64),
 		lastProcessedInputSeq:  make(map[string]uint64),
+		recordedDeathTick:      make(map[string]uint64),
+		highScores:             highScores,
 	}
 	r.addBot()
 
@@ -149,9 +154,11 @@ func (r *Room) RemovePlayer(playerID string) {
 		return
 	}
 
+	r.recordScore(playerID)
 	delete(r.players, playerID)
 	delete(r.lastProcessedInputTick, playerID)
 	delete(r.lastProcessedInputSeq, playerID)
+	delete(r.recordedDeathTick, playerID)
 	r.engine.RemovePlayer(playerID)
 
 	// Broadcast player left
@@ -231,6 +238,7 @@ func (r *Room) processTick() {
 	// Notify newly dead players
 	newlyDead := r.engine.GetNewlyDeadPlayers()
 	for playerID, reason := range newlyDead {
+		r.recordScore(playerID)
 		r.sendToPlayer(playerID, protocol.MessageTypePlayerDied, protocol.PlayerDiedMessage{
 			PlayerID: playerID,
 			Reason:   reason,
@@ -369,6 +377,7 @@ func (r *Room) HandlePlayAgain(playerID string, playAgain bool) {
 		if err := r.engine.RespawnPlayer(playerID); err != nil {
 			return
 		}
+		delete(r.recordedDeathTick, playerID)
 		// Broadcast updated state so all clients see the respawn
 		r.broadcastGameState()
 	} else {
@@ -376,9 +385,11 @@ func (r *Room) HandlePlayAgain(playerID string, playAgain bool) {
 		if _, exists := r.players[playerID]; !exists {
 			return
 		}
+		r.recordScore(playerID)
 		delete(r.players, playerID)
 		delete(r.lastProcessedInputTick, playerID)
 		delete(r.lastProcessedInputSeq, playerID)
+		delete(r.recordedDeathTick, playerID)
 		r.engine.RemovePlayer(playerID)
 
 		msg, _ := protocol.NewMessage(protocol.MessageTypePlayerLeft, map[string]string{
@@ -386,6 +397,34 @@ func (r *Room) HandlePlayAgain(playerID string, playAgain bool) {
 		})
 		r.connHub.BroadcastToRoom(r.ID, msg)
 	}
+}
+
+func (r *Room) recordScore(playerID string) {
+	if r.highScores == nil {
+		return
+	}
+	if r.bot != nil && playerID == r.bot.PlayerID {
+		return
+	}
+
+	player, playerOK := r.players[playerID]
+	snake, snakeOK := r.engine.GetState().Snakes[playerID]
+	if !playerOK || !snakeOK {
+		return
+	}
+	if snake.Dead && r.recordedDeathTick[playerID] == snake.DeadAt {
+		return
+	}
+
+	if snake.Dead {
+		r.recordedDeathTick[playerID] = snake.DeadAt
+	}
+	r.highScores.Add(storage.HighScore{
+		PlayerID:   playerID,
+		PlayerName: player.Name,
+		RoomID:     r.ID,
+		Score:      len(snake.Body) + 1,
+	})
 }
 
 // sendToPlayer sends a message to a specific player in the room.

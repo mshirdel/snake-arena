@@ -81,6 +81,7 @@ doc/                    OpenAPI 3.0 spec
 | `/health` | GET | Health check |
 | `/rooms` | GET | List active rooms |
 | `/rooms` | POST | Create a new room (`{room_id: string}`) |
+| `/high-scores` | GET | List top 10 in-memory high scores |
 | `/ws` | GET (WebSocket) | Game connection (JSON subprotocol) |
 
 ## WebSocket Protocol

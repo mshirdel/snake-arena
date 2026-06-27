@@ -19,6 +19,16 @@ npm start
 
 Make sure the backend server is running (`make run` from the project root) before opening the game.
 
+## Building
+
+The frontend is a static HTML/CSS/JavaScript app. Build it into `dist/` with:
+
+```bash
+npm run build
+```
+
+The build command copies the browser-facing files into `frontend/dist/`, which can be served by any static file server.
+
 ## CLI Simulation
 
 You can test the game from the client side without opening a browser by running the Node.js simulator. It connects players to the backend WebSocket, sends direction inputs, respawns after deaths, and leaves the room when the configured duration ends. Auto-created simulations split players across rooms with no more than 4 players per room.
@@ -86,6 +96,7 @@ frontend/
   renderer.js         Canvas rendering
   simulate-cli.js     Node.js CLI client simulator
   styles.css          All styles
+  dist/               Static build output from npm run build
   e2e/                Playwright E2E tests
   package.json
 ```

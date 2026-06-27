@@ -7,11 +7,15 @@
 const app = {
     currentScreen: 'connect',
     playerId: '',
+    playerName: '',
     roomId: '',
     selectedColor: '#22c55e',
+    playerHighScore: 0,
     isConnected: false,
     renderer: null,
-    wsServerUrl: ''
+    wsServerUrl: '',
+    apiServerUrl: '',
+    highScoresTimer: null
 };
 
 // DOM Elements
@@ -27,8 +31,10 @@ const screens = {
  */
 function init() {
     setupUI();
+    loadUserPreferences();
     setupNetwork();
     setupInput();
+    startHighScoresPolling();
 }
 
 /**
@@ -44,10 +50,15 @@ function setupUI() {
         document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('selected'));
         btn.classList.add('selected');
         app.selectedColor = btn.dataset.color;
+        saveUserPreferences();
     });
 
     // Join form
     document.getElementById('join-form').addEventListener('submit', handleJoinSubmit);
+    document.getElementById('player-name').addEventListener('change', (e) => {
+        app.playerName = e.target.value.trim();
+        saveUserPreferences();
+    });
 
     // Leave button
     document.getElementById('leave-btn').addEventListener('click', handleLeave);
@@ -151,8 +162,12 @@ async function handleJoinSubmit(e) {
         return;
     }
 
-    // Generate player ID
-    app.playerId = 'player_' + Math.random().toString(36).substr(2, 9);
+    app.playerName = playerName;
+    if (!app.playerId) {
+        app.playerId = 'player_' + Math.random().toString(36).substr(2, 9);
+    }
+    saveUserPreferences();
+    loadPlayerHighScore(app.playerId);
 
     // Connect to WebSocket
     try {
@@ -195,6 +210,7 @@ function handleDirectionInput(direction) {
  */
 function handleLeave() {
     hideDeathOverlay();
+    recordCurrentPlayerScore();
 
     if (app.roomId && app.playerId) {
         // If dead, use play_again: false to properly clean up
@@ -218,6 +234,7 @@ function handleLeave() {
  * Handle play again button
  */
 async function handlePlayAgain() {
+    recordCurrentPlayerScore();
     network.disconnect();
     game.reset();
     showScreen('connect');
@@ -227,6 +244,7 @@ async function handlePlayAgain() {
  * Handle back to menu button
  */
 function handleBackToMenu() {
+    recordCurrentPlayerScore();
     network.disconnect();
     game.reset();
     app.roomId = '';
@@ -281,6 +299,7 @@ function handleGameStart(message) {
 function handleGameEnd(message) {
     const payload = message.payload;
     console.log('Game ended!', payload);
+    recordCurrentPlayerScore();
 
     game.state.gameOver = true;
     game.state.winner = payload.winner;
@@ -345,6 +364,8 @@ function handleAck(message) {
 function handlePlayerDied(message) {
     const payload = message.payload;
     console.log('You died!', payload.reason);
+    recordCurrentPlayerScore();
+    loadPlayerHighScore(app.playerId);
     showDeathOverlay(payload.reason);
 }
 
@@ -486,6 +507,156 @@ function updateSnakeScores() {
 }
 
 /**
+ * Start polling the REST high-score endpoint.
+ */
+function startHighScoresPolling() {
+    loadHighScores();
+    app.highScoresTimer = setInterval(loadHighScores, 5000);
+}
+
+/**
+ * Fetch and render top high scores.
+ */
+async function loadHighScores() {
+    const status = document.getElementById('high-scores-status');
+
+    try {
+        const response = await fetch(`${app.apiServerUrl}/high-scores`, {
+            headers: { 'Accept': 'application/json' }
+        });
+        if (!response.ok) {
+            throw new Error(`High scores request failed: ${response.status}`);
+        }
+
+        const data = await response.json();
+        renderHighScores(data.high_scores || []);
+        syncPlayerHighScoreFromList(data.high_scores || []);
+        status.textContent = 'Live';
+        status.classList.remove('error-state');
+    } catch (error) {
+        console.error('Failed to load high scores:', error);
+        status.textContent = 'Offline';
+        status.classList.add('error-state');
+    }
+}
+
+/**
+ * Fetch and display the current player's server-side high score.
+ */
+async function loadPlayerHighScore(playerId = app.playerId) {
+    if (!playerId) {
+        renderPlayerHighScore(app.playerHighScore);
+        return;
+    }
+
+    try {
+        const response = await fetch(`${app.apiServerUrl}/high-scores/${encodeURIComponent(playerId)}`, {
+            headers: { 'Accept': 'application/json' }
+        });
+
+        if (response.status === 404) {
+            renderPlayerHighScore(app.playerHighScore);
+            return;
+        }
+        if (!response.ok) {
+            throw new Error(`Player high score request failed: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const score = normalizeScore(data.high_score && data.high_score.score);
+        updateLocalHighScore(score);
+    } catch (error) {
+        console.error('Failed to load player high score:', error);
+        renderPlayerHighScore(app.playerHighScore);
+    }
+}
+
+/**
+ * Keep the player score display fresh when the leaderboard already includes them.
+ * @param {array} scores
+ */
+function syncPlayerHighScoreFromList(scores) {
+    if (!app.playerId) {
+        renderPlayerHighScore(app.playerHighScore);
+        return;
+    }
+
+    const ownScore = scores.find(score => score.player_id === app.playerId);
+    if (ownScore) {
+        updateLocalHighScore(normalizeScore(ownScore.score));
+    } else {
+        renderPlayerHighScore(app.playerHighScore);
+    }
+}
+
+/**
+ * Render the saved player score above the high-scores panel.
+ * @param {number} score
+ */
+function renderPlayerHighScore(score) {
+    const panel = document.getElementById('player-high-score');
+    const value = document.getElementById('player-high-score-value');
+    const scoreValue = normalizeScore(score);
+
+    panel.style.display = scoreValue > 0 ? 'flex' : 'none';
+    value.textContent = scoreValue;
+}
+
+/**
+ * Save the player's best known score locally.
+ * @param {number} score
+ */
+function updateLocalHighScore(score) {
+    const scoreValue = normalizeScore(score);
+    if (scoreValue <= app.playerHighScore) {
+        renderPlayerHighScore(app.playerHighScore);
+        return;
+    }
+
+    app.playerHighScore = scoreValue;
+    setCookie('snake_player_high_score', String(scoreValue));
+    renderPlayerHighScore(scoreValue);
+}
+
+/**
+ * Record the visible player score from the latest game state.
+ */
+function recordCurrentPlayerScore() {
+    const snake = game.getPlayerSnake();
+    if (!snake) return;
+
+    updateLocalHighScore(snake.length || 0);
+}
+
+/**
+ * Render high scores in the right sidebar.
+ * @param {array} scores
+ */
+function renderHighScores(scores) {
+    const list = document.getElementById('high-scores-list');
+    const empty = document.getElementById('high-scores-empty');
+    const topScores = scores.slice(0, 10);
+
+    empty.style.display = topScores.length === 0 ? 'block' : 'none';
+    list.innerHTML = topScores.map((score, index) => {
+        const playerName = escapeHtml(score.player_name || score.player_id || 'Player');
+        const roomId = escapeHtml(score.room_id || '');
+        const scoreValue = Number.isFinite(score.score) ? score.score : 0;
+
+        return `
+            <li class="high-score-item">
+                <span class="high-score-rank">${index + 1}</span>
+                <span class="high-score-player">
+                    <span class="high-score-name">${playerName}</span>
+                    <span class="high-score-room">${roomId}</span>
+                </span>
+                <span class="high-score-value">${scoreValue}</span>
+            </li>
+        `;
+    }).join('');
+}
+
+/**
  * Show game over screen
  */
 function showGameOverScreen(message, data) {
@@ -512,10 +683,87 @@ function showGameOverScreen(message, data) {
 // ============ Utility Functions ============
 
 /**
+ * Load persisted name, color, player id, and local high score.
+ */
+function loadUserPreferences() {
+    app.playerId = getCookie('snake_player_id');
+    app.playerName = getCookie('snake_player_name');
+    app.selectedColor = getCookie('snake_player_color') || app.selectedColor;
+    app.playerHighScore = normalizeScore(getCookie('snake_player_high_score'));
+
+    const playerNameInput = document.getElementById('player-name');
+    if (app.playerName) {
+        playerNameInput.value = app.playerName;
+    }
+
+    const colorButton = Array.from(document.querySelectorAll('.color-btn'))
+        .find(btn => btn.dataset.color === app.selectedColor);
+    if (colorButton) {
+        document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('selected'));
+        colorButton.classList.add('selected');
+    }
+
+    renderPlayerHighScore(app.playerHighScore);
+    loadPlayerHighScore(app.playerId);
+}
+
+/**
+ * Persist current user preferences in cookies.
+ */
+function saveUserPreferences() {
+    if (app.playerId) setCookie('snake_player_id', app.playerId);
+    if (app.playerName) setCookie('snake_player_name', app.playerName);
+    if (app.selectedColor) setCookie('snake_player_color', app.selectedColor);
+}
+
+/**
  * Generate a random ID
  */
 function generateId() {
     return Math.random().toString(36).substr(2, 9);
+}
+
+/**
+ * Normalize a score value from cookies or JSON.
+ */
+function normalizeScore(value) {
+    const score = Number(value);
+    return Number.isFinite(score) && score > 0 ? Math.floor(score) : 0;
+}
+
+/**
+ * Set a cookie for one year.
+ */
+function setCookie(name, value) {
+    const maxAge = 60 * 60 * 24 * 365;
+    document.cookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=/; SameSite=Lax`;
+}
+
+/**
+ * Read a cookie value.
+ */
+function getCookie(name) {
+    const encodedName = `${encodeURIComponent(name)}=`;
+    const cookies = document.cookie ? document.cookie.split('; ') : [];
+    for (const cookie of cookies) {
+        if (cookie.startsWith(encodedName)) {
+            return decodeURIComponent(cookie.slice(encodedName.length));
+        }
+    }
+    return '';
+}
+
+/**
+ * Escape text before rendering HTML strings.
+ */
+function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    })[char]);
 }
 
 /**
@@ -524,6 +772,7 @@ function generateId() {
 function updateServerUrls() {
     const isLocal = ['localhost', '127.0.0.1', ''].includes(window.location.hostname);
     app.wsServerUrl = isLocal ? 'ws://localhost:8080/ws' : 'wss://snake.liara.run/ws';
+    app.apiServerUrl = isLocal ? 'http://localhost:8080' : 'https://snake.liara.run';
 }
 
 // Initialize on DOM ready
