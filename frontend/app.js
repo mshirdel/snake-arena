@@ -422,7 +422,8 @@ function showScreen(name) {
 
     // Start/stop render loop based on screen
     if (name === 'game') {
-        app.renderer.startRenderLoop(() => game.state);
+        app.renderer.resize();
+        app.renderer.startRenderLoop((timestamp) => game.getInterpolatedState(timestamp));
     } else {
         game.stopPrediction();
         app.renderer.stopRenderLoop();

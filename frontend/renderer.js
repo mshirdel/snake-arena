@@ -10,10 +10,15 @@ class GameRenderer {
         this.cellSize = 20;
         this.gridWidth = 40;
         this.gridHeight = 30;
+        this.canvasWidth = 800;
+        this.canvasHeight = 600;
+        this.devicePixelRatio = window.devicePixelRatio || 1;
         this.backgroundColor = '#1a1a2e';
         this.gridColor = '#252540';
         this.foodColor = '#f59e0b';
         this.foodGlowColor = 'rgba(245, 158, 11, 0.3)';
+        this.gridCanvas = document.createElement('canvas');
+        this.gridCtx = this.gridCanvas.getContext('2d');
 
         // Animation
         this.animationFrame = null;
@@ -34,23 +39,32 @@ class GameRenderer {
      */
     resize() {
         const container = this.canvas.parentElement;
-        const containerWidth = container ? container.clientWidth - 20 : (this.canvas.width || 800);
+        const fallbackWidth = this.gridWidth * 20;
+        const availableWidth = container ? container.clientWidth - 20 : this.canvas.clientWidth;
+        const containerWidth = availableWidth > 0 ? availableWidth : fallbackWidth;
         const containerHeight = Math.min(containerWidth * 0.75, window.innerHeight * 0.6);
+        const dpr = window.devicePixelRatio || 1;
 
         // Calculate cell size to fit grid
         const cellW = Math.floor(containerWidth / this.gridWidth);
         const cellH = Math.floor(containerHeight / this.gridHeight);
-        this.cellSize = Math.min(cellW, cellH, 20);
+        this.cellSize = Math.max(1, Math.min(cellW, cellH, 20));
 
         const width = this.gridWidth * this.cellSize;
         const height = this.gridHeight * this.cellSize;
 
-        // Set canvas size
-        this.canvas.width = width;
-        this.canvas.height = height;
+        this.canvasWidth = width;
+        this.canvasHeight = height;
+        this.devicePixelRatio = dpr;
 
-        // Rescale for crisp rendering
-        this.ctx.scale(1, 1);
+        // Use a high-DPI backing store while keeping drawing in CSS pixels.
+        this.canvas.style.width = `${width}px`;
+        this.canvas.style.height = `${height}px`;
+        this.canvas.width = Math.round(width * dpr);
+        this.canvas.height = Math.round(height * dpr);
+        this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        this.rebuildGridCache();
     }
 
     /**
@@ -59,6 +73,10 @@ class GameRenderer {
      * @param {number} height - Grid height
      */
     setGridSize(width, height) {
+        if (this.gridWidth === width && this.gridHeight === height) {
+            return;
+        }
+
         this.gridWidth = width;
         this.gridHeight = height;
         this.resize();
@@ -69,31 +87,45 @@ class GameRenderer {
      */
     clear() {
         this.ctx.fillStyle = this.backgroundColor;
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        this.ctx.fillRect(0, 0, this.canvasWidth, this.canvasHeight);
     }
 
     /**
-     * Draw grid lines
+     * Rebuild the static board background cache.
      */
-    drawGrid() {
-        this.ctx.strokeStyle = this.gridColor;
-        this.ctx.lineWidth = 0.5;
+    rebuildGridCache() {
+        const dpr = this.devicePixelRatio;
+        this.gridCanvas.width = Math.round(this.canvasWidth * dpr);
+        this.gridCanvas.height = Math.round(this.canvasHeight * dpr);
+        this.gridCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        this.gridCtx.fillStyle = this.backgroundColor;
+        this.gridCtx.fillRect(0, 0, this.canvasWidth, this.canvasHeight);
+        this.gridCtx.strokeStyle = this.gridColor;
+        this.gridCtx.lineWidth = 0.5;
 
         // Vertical lines
         for (let x = 0; x <= this.gridWidth; x++) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(x * this.cellSize, 0);
-            this.ctx.lineTo(x * this.cellSize, this.canvas.height);
-            this.ctx.stroke();
+            this.gridCtx.beginPath();
+            this.gridCtx.moveTo(x * this.cellSize + 0.25, 0);
+            this.gridCtx.lineTo(x * this.cellSize + 0.25, this.canvasHeight);
+            this.gridCtx.stroke();
         }
 
         // Horizontal lines
         for (let y = 0; y <= this.gridHeight; y++) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(0, y * this.cellSize);
-            this.ctx.lineTo(this.canvas.width, y * this.cellSize);
-            this.ctx.stroke();
+            this.gridCtx.beginPath();
+            this.gridCtx.moveTo(0, y * this.cellSize + 0.25);
+            this.gridCtx.lineTo(this.canvasWidth, y * this.cellSize + 0.25);
+            this.gridCtx.stroke();
         }
+    }
+
+    /**
+     * Draw cached grid background.
+     */
+    drawGrid() {
+        this.ctx.drawImage(this.gridCanvas, 0, 0, this.canvasWidth, this.canvasHeight);
     }
 
     /**
@@ -145,13 +177,14 @@ class GameRenderer {
         this.ctx.globalAlpha = 0.3;
         for (let i = 1; i < body.length; i++) {
             const segment = body[i];
-            const px = segment.x * cellSize + 4;
-            const py = segment.y * cellSize + 4;
-            const size = cellSize - 8;
+            const inset = Math.min(4, cellSize * 0.2);
+            const px = segment.x * cellSize + inset;
+            const py = segment.y * cellSize + inset;
+            const size = Math.max(1, cellSize - inset * 2);
 
             this.ctx.fillStyle = '#000';
             this.ctx.beginPath();
-            this.ctx.arc(px + size/2, py + size/2, size/4, 0, Math.PI * 2);
+            this.ctx.arc(px + size / 2, py + size / 2, Math.max(1, size / 4), 0, Math.PI * 2);
             this.ctx.fill();
         }
         this.ctx.globalAlpha = 1;
@@ -174,7 +207,7 @@ class GameRenderer {
 
         const direction = snake.direction || '';
 
-        const eyeSize = 3;
+        const eyeSize = Math.max(2, cellSize * 0.15);
         const eyeOffset = cellSize / 4;
 
         this.ctx.fillStyle = '#fff';
@@ -292,17 +325,16 @@ class GameRenderer {
      * @param {object} state - Game state
      */
     render(state) {
-        // Update food pulse
-        this.foodPulse += 0.1;
-
-        // Clear and draw grid
-        this.clear();
-        this.drawGrid();
-
         // Update grid size if changed
         if (state.width && state.height) {
             this.setGridSize(state.width, state.height);
         }
+
+        // Update food pulse
+        this.foodPulse += 0.1;
+
+        // Draw cached board background
+        this.drawGrid();
 
         // Draw foods
         if (state.foods) {
@@ -341,7 +373,7 @@ class GameRenderer {
         else color = '#ef4444';
 
         // Background pill
-        const x = this.canvas.width - metrics.width - pad * 3;
+        const x = this.canvasWidth - metrics.width - pad * 3;
         const y = pad;
         const w = metrics.width + pad * 2;
         const h = 20;
@@ -378,7 +410,7 @@ class GameRenderer {
      */
     startRenderLoop(getState) {
         const loop = (timestamp) => {
-            const state = getState();
+            const state = getState(timestamp);
             if (state) {
                 this.renderFrame(state);
             }
