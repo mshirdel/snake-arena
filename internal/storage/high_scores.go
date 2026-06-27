@@ -8,7 +8,7 @@ import (
 
 const defaultHighScoreLimit = 10
 
-// HighScore records one completed snake run.
+// HighScore records a player's best completed snake run.
 type HighScore struct {
 	PlayerID   string    `json:"player_id"`
 	PlayerName string    `json:"player_name"`
@@ -17,7 +17,7 @@ type HighScore struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
-// HighScores stores the top snake scores in memory.
+// HighScores stores each player's top snake score in memory.
 type HighScores struct {
 	mu      sync.RWMutex
 	limit   int
@@ -35,7 +35,7 @@ func NewHighScores(limit int) *HighScores {
 	}
 }
 
-// Add records a score if it belongs in the current top list.
+// Add records a player's score if it improves their current high score.
 func (h *HighScores) Add(score HighScore) {
 	if score.Score <= 0 {
 		return
@@ -47,7 +47,23 @@ func (h *HighScores) Add(score HighScore) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	for i := range h.entries {
+		if h.entries[i].PlayerID != score.PlayerID {
+			continue
+		}
+		if score.Score <= h.entries[i].Score {
+			return
+		}
+		h.entries[i] = score
+		h.sortAndTrim()
+		return
+	}
+
 	h.entries = append(h.entries, score)
+	h.sortAndTrim()
+}
+
+func (h *HighScores) sortAndTrim() {
 	sort.SliceStable(h.entries, func(i, j int) bool {
 		if h.entries[i].Score == h.entries[j].Score {
 			return h.entries[i].CreatedAt.Before(h.entries[j].CreatedAt)

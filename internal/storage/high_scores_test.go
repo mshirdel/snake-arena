@@ -37,3 +37,43 @@ func TestHighScoresReturnsCopy(t *testing.T) {
 		t.Fatal("expected List to return a copy")
 	}
 }
+
+func TestHighScoresKeepsOneBestScorePerPlayer(t *testing.T) {
+	scores := NewHighScores(10)
+
+	scores.Add(HighScore{
+		PlayerID:   "player-1",
+		PlayerName: "Alice",
+		RoomID:     "room-1",
+		Score:      8,
+		CreatedAt:  time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	})
+	scores.Add(HighScore{
+		PlayerID:   "player-1",
+		PlayerName: "Alice",
+		RoomID:     "room-2",
+		Score:      5,
+		CreatedAt:  time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC),
+	})
+	scores.Add(HighScore{
+		PlayerID:   "player-1",
+		PlayerName: "Alice Updated",
+		RoomID:     "room-3",
+		Score:      12,
+		CreatedAt:  time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC),
+	})
+
+	got := scores.List()
+	if len(got) != 1 {
+		t.Fatalf("expected 1 high score, got %d", len(got))
+	}
+	if got[0].Score != 12 {
+		t.Fatalf("expected best score 12, got %d", got[0].Score)
+	}
+	if got[0].RoomID != "room-3" {
+		t.Fatalf("expected best score room room-3, got %s", got[0].RoomID)
+	}
+	if got[0].PlayerName != "Alice Updated" {
+		t.Fatalf("expected updated player name, got %s", got[0].PlayerName)
+	}
+}
