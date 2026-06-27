@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "E2E tests for Snake frontend",
   "scripts": {
+    "build": "node build.js",
     "start": "http-server . -p 9000 -c-1",
     "simulate": "node simulate-cli.js",
     "test:e2e": "playwright test",
