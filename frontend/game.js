@@ -29,6 +29,10 @@ class Game {
         this.tickRate = 10;
         this.predictionTimer = null;
         this.predictionIntervalMs = 1000 / this.tickRate;
+        this.renderPreviousState = null;
+        this.renderCurrentState = null;
+        this.renderStepStartedAt = 0;
+        this.renderStepDurationMs = this.predictionIntervalMs;
         this.lastServerTick = 0;
         this.lastProcessedInputTick = {};
         this.lastProcessedInputSeq = {};
@@ -71,6 +75,10 @@ class Game {
         this.lastInputDirection = '';
         this.lastAuthoritativeState = null;
         this.stateHistory = [];
+        this.renderPreviousState = null;
+        this.renderCurrentState = null;
+        this.renderStepStartedAt = 0;
+        this.renderStepDurationMs = this.predictionIntervalMs;
         this.lastServerTick = 0;
         this.lastProcessedInputTick = {};
         this.lastProcessedInputSeq = {};
@@ -106,6 +114,7 @@ class Game {
         this.lastProcessedInputSeq = gameState.last_processed_input_seq || {};
         this.lastAuthoritativeState = this.cloneState(this.state);
         this.state = this.reconcilePendingInputs(this.lastAuthoritativeState);
+        this.recordRenderStep(this.state, Date.now());
 
         if (this.onStateUpdate) {
             this.onStateUpdate(this.state);
@@ -249,6 +258,7 @@ class Game {
                 return;
             }
             this.state = this.simulateTick(this.state);
+            this.recordRenderStep(this.state, Date.now());
             if (this.onStateUpdate) {
                 this.onStateUpdate(this.state);
             }
@@ -423,23 +433,107 @@ class Game {
     }
 
     /**
-     * Get interpolated state between two frames
-     * @param {number} progress - Interpolation factor (0-1)
+     * Store the state pair used by the renderer for motion interpolation.
+     * @param {object} nextState
+     * @param {number} timestamp
+     */
+    recordRenderStep(nextState, timestamp = Date.now()) {
+        this.renderPreviousState = this.renderCurrentState
+            ? this.cloneState(this.renderCurrentState)
+            : this.cloneState(nextState);
+        this.renderCurrentState = this.cloneState(nextState);
+        this.renderStepStartedAt = timestamp;
+        this.renderStepDurationMs = this.predictionIntervalMs;
+    }
+
+    /**
+     * Get interpolated render state between two simulation steps.
+     * @param {number} timestamp - DOMHighResTimeStamp from requestAnimationFrame
      * @returns {object} - Interpolated state
      */
-    getInterpolatedState(progress) {
-        if (this.stateHistory.length === 0) {
+    getInterpolatedState(timestamp = performance.now()) {
+        if (!this.renderPreviousState || !this.renderCurrentState) {
             return this.state;
         }
 
-        const prevState = this.stateHistory[this.stateHistory.length - 1];
-        const currentState = this.state;
+        const elapsed = Math.max(0, Date.now() - this.renderStepStartedAt);
+        const progress = Math.min(elapsed / this.renderStepDurationMs, 1);
+        const currentState = this.renderCurrentState;
+        const prevState = this.renderPreviousState;
 
-        // Simple linear interpolation
         return {
             ...currentState,
             tick: prevState.tick + (currentState.tick - prevState.tick) * progress,
-            snakes: this.state.snakes // Use latest state for snakes
+            snakes: this.interpolateSnakes(prevState.snakes, currentState.snakes, progress),
+            foods: currentState.foods
+        };
+    }
+
+    /**
+     * Interpolate every snake body segment independently for visual-only motion.
+     * @param {object} previousSnakes
+     * @param {object} currentSnakes
+     * @param {number} progress
+     * @returns {object}
+     */
+    interpolateSnakes(previousSnakes = {}, currentSnakes = {}, progress) {
+        const interpolated = {};
+
+        Object.entries(currentSnakes).forEach(([playerId, snake]) => {
+            const previousSnake = previousSnakes[playerId];
+            if (!previousSnake || !snake.alive) {
+                interpolated[playerId] = snake;
+                return;
+            }
+
+            const previousBody = this.getRenderableBody(previousSnake);
+            const currentBody = this.getRenderableBody(snake);
+            const renderBody = currentBody.map((segment, index) => {
+                const previousSegment = previousBody[index] || previousBody[previousBody.length - 1] || segment;
+                return this.interpolatePosition(previousSegment, segment, progress);
+            });
+
+            interpolated[playerId] = {
+                ...snake,
+                head: renderBody[0] || snake.head,
+                body: renderBody.slice(1)
+            };
+        });
+
+        return interpolated;
+    }
+
+    /**
+     * Convert backend snake shape (head + body) into render order.
+     * @param {object} snake
+     * @returns {array}
+     */
+    getRenderableBody(snake) {
+        const body = Array.isArray(snake.body) ? snake.body : [];
+        if (!snake.head) return body;
+        return [snake.head, ...body];
+    }
+
+    /**
+     * Interpolate nearby grid positions while snapping teleports/respawns.
+     * @param {object} from
+     * @param {object} to
+     * @param {number} progress
+     * @returns {object}
+     */
+    interpolatePosition(from, to, progress) {
+        if (!from || !to) return to || from || { x: 0, y: 0 };
+
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+        const isAdjacentMove = Math.abs(dx) <= 1 && Math.abs(dy) <= 1;
+        if (!isAdjacentMove) {
+            return to;
+        }
+
+        return {
+            x: from.x + dx * progress,
+            y: from.y + dy * progress
         };
     }
 
