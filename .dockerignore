@@ -1,5 +1,8 @@
 bin/
-frontend/
+frontend/node_modules/
+frontend/playwright-report/
+frontend/test-results/
+frontend/dist/
 frontend.zip
 .git/
 .claude/

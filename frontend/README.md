@@ -27,7 +27,7 @@ The frontend is a static HTML/CSS/JavaScript app. Build it into `dist/` with:
 npm run build
 ```
 
-The build command copies the browser-facing files into `frontend/dist/`, which can be served by any static file server.
+The build command writes the browser-facing files into `frontend/dist/`, minifies the CSS, bundles and obfuscates the JavaScript, and adds content hashes to the CSS and JavaScript filenames for cache-busting. The generated `index.html` references the versioned assets and can be served by any static file server.
 
 ## CLI Simulation
 

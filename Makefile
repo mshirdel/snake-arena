@@ -1,9 +1,12 @@
-.PHONY: build run clean test test-e2e test-all
+.PHONY: build frontend-build run clean test test-e2e test-all
 
 BINARY_NAME=snake
 BUILD_DIR=bin
 
-build:
+frontend-build:
+	cd frontend && npm run build
+
+build: frontend-build
 	go build -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd
 	chmod +x $(BUILD_DIR)/$(BINARY_NAME)
 
