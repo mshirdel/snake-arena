@@ -33,8 +33,9 @@ var (
 )
 
 const (
-	adminUsername = "admin"
-	adminPassword = "admin123"
+	adminUsername   = "admin"
+	adminPassword   = "admin123"
+	productionUIDir = "frontend/dist"
 )
 
 type adminStats struct {
@@ -82,6 +83,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	e.GET("/high-scores/:player_id", handlePlayerHighScore(highScores))
 	e.GET("/ws", handleWebSocket(connHub, mm))
 	registerAdminRoutes(e, connHub, mm)
+	registerProductionUI(e, productionUIDir)
 
 	// Start server
 	addr := cfg.Server.Addr()
@@ -92,6 +94,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func registerProductionUI(e *echo.Echo, uiDir string) {
+	e.Static("/", uiDir)
 }
 
 func handleHighScores(highScores *storage.HighScores) echo.HandlerFunc {
